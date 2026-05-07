@@ -442,6 +442,7 @@ class PartitionInfo(TypedDict):
     role: str
     path: str
 
+
 def mount_iso(iso_path: str) -> str | None:
     """This function mounts an iso file at /mnt/iso/ and returns the location if mount is successfull
 
