@@ -434,7 +434,7 @@ class TestFlashUsbProgress:
 
         original_environ = dict(os.environ)
         try:
-            flash_usb_module.flash_usb("/dev/sdb", iso_path, progress_cb=progress_cb)
+            flash_usb_module.flash_usb("/dev/sdb", iso_path, progress_cb=progress_cb, status_cb=status_cb)
         finally:
             os.unlink(iso_path)
 
