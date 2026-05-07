@@ -372,12 +372,24 @@ class TestFlashUsbProgress:
 
     def _fake_popen_factory(self, stderr_lines, popen_calls, envs):
         class FakePopen:
+            class FakeStderr:
+                def __init__(self, lines):
+                    self._lines = [line.encode("utf-8") for line in lines]
+                    self._index = 0
+
+                def read1(self, size=-1):
+                    if self._index >= len(self._lines):
+                        return b""
+                    result = self._lines[self._index]
+                    self._index += 1
+                    return result
+
             def __init__(self, cmd, **kwargs):
                 popen_calls.append((cmd, kwargs))
                 envs.append(kwargs.get("env"))
                 self.pid = 99999
                 self.returncode = 0
-                self.stderr = iter(line.encode("utf-8") for line in stderr_lines)
+                self.stderr = FakePopen.FakeStderr(stderr_lines)
 
             def wait(self):
                 return self.returncode
