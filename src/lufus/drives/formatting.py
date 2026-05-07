@@ -26,6 +26,26 @@ def _find_tool(name: str) -> str:
     return name
 
 
+def _get_logical_block_size(drive: str) -> int:
+    """Return the logical sector size of *drive* by reading sysfs.
+
+    Uses ``/sys/class/block/<dev>/queue/logical_block_size`` so no external
+    tool is required.  Falls back to 512 bytes if the value cannot be read.
+    """
+    dev_name = os.path.basename(drive)
+    sysfs_path = f"/sys/class/block/{dev_name}/queue/logical_block_size"
+    try:
+        with open(sysfs_path) as fh:
+            return int(fh.read().strip())
+    except Exception as exc:
+        log.warning(
+            "Could not read sector size from %s: %s. Using 512-byte default.",
+            sysfs_path,
+            exc,
+        )
+        return 512
+
+
 #######
 
 
@@ -82,19 +102,23 @@ def unmount(drive: str = None) -> bool:
 
 # mountain
 def remount(drive: str = None) -> bool:
-    mount = None
     if not drive:
         mount, drive, _ = _get_mount_and_drive()
     else:
-        # drive was supplied by caller; resolve mount point from current state
-        _, _, mount_dict = _get_mount_and_drive()
-        # find the mount point whose device node matches the given drive
-        mount = next((mp for mp, _label in mount_dict.items()), None)
+        # Look up mount point for the specified drive
+        import psutil
+
+        mount = None
+        for part in psutil.disk_partitions(all=True):
+            if part.device == drive:
+                mount = part.mountpoint
+                break
+
     if not drive:
         log.error("No drive node found. Cannot unmount.")
         return False
     if not mount:
-        log.error("No drive node or mount point found. Cannot remount.")
+        log.error("No mount point found for drive %s. Cannot remount.", drive)
         return False
     log.info("Remounting %s -> %s...", drive, mount)
     try:
@@ -209,37 +233,8 @@ def check_device_bad_blocks() -> bool:
     passes = 2 if state.check_bad else 1
 
     # Probe the device's logical sector size so badblocks uses the real
-    # device geometry. Fall back to 4096 bytes if detection fails.
-    logical_block_size = 4096
-    try:
-        probe = subprocess.run(
-            [_find_tool("blockdev"), "--getss", drive],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if probe.returncode == 0:
-            probed = probe.stdout.strip()
-            if probed.isdigit():
-                logical_block_size = int(probed)
-            else:
-                log.warning(
-                    "Unexpected blockdev output for %r: %r. Using default block size.",
-                    drive,
-                    probed,
-                )
-        else:
-            log.warning(
-                "blockdev failed for %s (exit %d). Using default block size.",
-                drive,
-                probe.returncode,
-            )
-    except Exception as exc:
-        log.warning(
-            "Could not probe sector size for %s: %s. Using default block size.",
-            drive,
-            exc,
-        )
+    # device geometry. Fall back to 512 bytes if detection fails.
+    logical_block_size = _get_logical_block_size(drive)
 
     # -s = show progress, -v = verbose output
     # -n = non-destructive read-write test (safe default)
@@ -320,30 +315,10 @@ def disk_format(status_cb=None) -> bool:
             "NTFS",
             "ntfs-3g",
         ),
-        1: (
-            "mkfs.vfat",
-            lambda: ["-I", "-s", str(sectors_per_cluster), "-F", "32", raw_device],
-            "FAT32",
-            "dosfstools",
-        ),
-        2: (
-            "mkfs.exfat",
-            lambda: ["-b", str(block_size), raw_device],
-            "exFAT",
-            "exfatprogs or exfat-utils",
-        ),
-        3: (
-            "mkfs.ext4",
-            lambda: ["-b", str(block_size), raw_device],
-            "ext4",
-            "e2fsprogs",
-        ),
-        4: (
-            "mkudffs",
-            lambda: ["--blocksize=" + str(sector_size), raw_device],
-            "UDF",
-            "udftools",
-        ),
+        1: ("mkfs.vfat", lambda: ["-I", "-s", str(sectors_per_cluster), "-F", "32", raw_device], "FAT32", "dosfstools"),
+        2: ("mkfs.exfat", lambda: ["-b", str(block_size), raw_device], "exFAT", "exfatprogs or exfat-utils"),
+        3: ("mkfs.ext4", lambda: ["-b", str(block_size), raw_device], "ext4", "e2fsprogs"),
+        4: ("mkudffs", lambda: ["--blocksize=" + str(sector_size), raw_device], "UDF", "udftools"),
     }
 
     if fs_type not in fs_configs:
@@ -391,30 +366,14 @@ def _apply_partition_scheme(drive: str) -> None:
             # GPT — used for UEFI targets
             subprocess.run([_find_tool("parted"), "-s", raw_device, "mklabel", "gpt"], check=True)
             subprocess.run(
-                [
-                    _find_tool("parted"),
-                    "-s",
-                    raw_device,
-                    "mkpart",
-                    "primary",
-                    "1MiB",
-                    "100%",
-                ],
+                [_find_tool("parted"), "-s", raw_device, "mkpart", "primary", "1MiB", "100%"],
                 check=True,
             )
         else:
             # MBR — used for BIOS/legacy targets
             subprocess.run([_find_tool("parted"), "-s", raw_device, "mklabel", "msdos"], check=True)
             subprocess.run(
-                [
-                    _find_tool("parted"),
-                    "-s",
-                    raw_device,
-                    "mkpart",
-                    "primary",
-                    "1MiB",
-                    "100%",
-                ],
+                [_find_tool("parted"), "-s", raw_device, "mkpart", "primary", "1MiB", "100%"],
                 check=True,
             )
         log.info("Partition scheme %s applied to %s.", scheme_name, raw_device)
@@ -428,11 +387,6 @@ def _apply_partition_scheme(drive: str) -> None:
 
 
 def drive_repair() -> None:
-    # todo:
-    # add smartctl check if possible
-    # use fsck to prevent deletion of files for repair
-    # use testdisk for partition recovery if possible
-    # do dd if=/dev/zero of=/dev/sdX bs=1M count=10 conv=notrunc before sfdisk use
     _, drive, _ = _get_mount_and_drive()
     if not drive:
         log.error("No drive node found. Cannot repair.")

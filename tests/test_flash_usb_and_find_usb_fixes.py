@@ -146,7 +146,10 @@ class Testflash_usbNvmeDeviceStrip:
                 pass
 
         class FakePipe:
-            def readline(self):
+            def __iter__(self):
+                return iter([])
+
+            def read1(self, size=-1):
                 return b""
 
         monkeypatch.setattr(flash_usb_module.subprocess, "Popen", FakeProcess)
@@ -285,7 +288,7 @@ class TestFindDNGuardsEmptyDevice:
 
 
 class TestFindUsbHappyPath:
-    def test_find_usb_returns_label_from_lsblk(self, monkeypatch):
+    def test_find_usb_returns_label_from_udev(self, monkeypatch):
         user = "testuser"
         mount_path = f"/media/{user}/MY_USB"
 
@@ -310,10 +313,19 @@ class TestFindUsbHappyPath:
             "disk_partitions",
             lambda *args, **kwargs: [SimpleNamespace(mountpoint=mount_path, device="/dev/sdb1")],
         )
+
+        from types import SimpleNamespace as SNS
+
+        class FakeDevice:
+            def get(self, key, default=None):
+                return "MY_LABEL" if key == "ID_FS_LABEL" else default
+
+        monkeypatch.setattr(find_usb_module.pyudev, "Context", lambda: SNS())
+        monkeypatch.setattr(find_usb_module.os, "stat", lambda path: SNS(st_rdev=0x803))
         monkeypatch.setattr(
-            find_usb_module.subprocess,
-            "check_output",
-            lambda *a, **kw: "MY_LABEL\n",
+            find_usb_module.pyudev.Devices,
+            "from_device_number",
+            lambda ctx, kind, rdev: FakeDevice(),
         )
 
         result = find_usb_module.find_usb()
@@ -346,3 +358,148 @@ class TestFindUsbHappyPath:
         )
 
         assert find_usb_module.find_device_node() == "/dev/sdd1"
+
+
+# ---------------------------------------------------------------------------
+# flash_usb — progress reporting, LC_ALL env, and stderr line filtering
+# ---------------------------------------------------------------------------
+
+
+class TestFlashUsbProgress:
+    """Verify progress_cb milestones, dd stderr parsing, LC_ALL handling, and
+    filtering of bookkeeping lines vs. unexpected stderr warnings.
+    """
+
+    def _fake_popen_factory(self, stderr_lines, popen_calls, envs):
+        class FakePopen:
+            class FakeStderr:
+                def __init__(self, lines):
+                    self._lines = [line.encode("utf-8") for line in lines]
+                    self._index = 0
+
+                def read1(self, size=-1):
+                    if self._index >= len(self._lines):
+                        return b""
+                    result = self._lines[self._index]
+                    self._index += 1
+                    return result
+
+            def __init__(self, cmd, **kwargs):
+                popen_calls.append((cmd, kwargs))
+                envs.append(kwargs.get("env"))
+                self.pid = 99999
+                self.returncode = 0
+                self.stderr = FakePopen.FakeStderr(stderr_lines)
+
+            def wait(self):
+                return self.returncode
+
+        return FakePopen
+
+    def test_progress_cb_receives_milestones_and_scaled_dd_progress(self, monkeypatch):
+        progress_values = []
+        status_messages = []
+
+        def progress_cb(progress):
+            progress_values.append(progress)
+
+        def status_cb(message):
+            status_messages.append(message)
+
+        stderr_lines = [
+            "0+0 records in\n",
+            "0+0 records out\n",
+            "10% completed\n",
+            "12345+0 records in\n",
+            "12345+0 records out\n",
+            "50% completed\n",
+            "copied, 1.23 s, 4.56 MB/s\n",
+            "100% completed\n",
+        ]
+
+        popen_calls = []
+        envs = []
+        fake_popen = self._fake_popen_factory(stderr_lines, popen_calls, envs)
+        monkeypatch.setattr(flash_usb_module.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(flash_usb_module, "check_iso_signature", lambda p: True)
+        monkeypatch.setattr(flash_usb_module, "is_windows_iso", lambda p: False)
+        monkeypatch.setattr(flash_usb_module, "detect_iso_type", lambda p: flash_usb_module.IsoType.LINUX)
+
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as f:
+            f.write(b"\x00" * 100)
+            iso_path = f.name
+
+        original_environ = dict(os.environ)
+        try:
+            flash_usb_module.flash_usb("/dev/sdb", iso_path, progress_cb=progress_cb, status_cb=status_cb)
+        finally:
+            os.unlink(iso_path)
+
+        # LC_ALL must be "C" and global env must not be mutated
+        dd_call = next((c for c in popen_calls if c[0] and c[0][0] == "dd"), None)
+        assert dd_call is not None, "dd Popen should have been called"
+        env = dd_call[1].get("env")
+        assert env is not None
+        assert env.get("LC_ALL") == "C"
+        assert dict(os.environ) == original_environ
+
+        # progress_cb should have the early 0 milestone, then scaled values
+        assert progress_values[0] == 0
+        assert progress_values[-1] == 100
+        assert sorted(progress_values) == progress_values
+
+        # Status messages should contain the raw dd progress lines
+        assert any("10% completed" in msg for msg in status_messages)
+        assert any("50% completed" in msg for msg in status_messages)
+        assert any("100% completed" in msg for msg in status_messages)
+
+    def test_non_progress_and_unexpected_stderr_lines_handling(self, monkeypatch, caplog):
+        progress_values = []
+        status_messages = []
+
+        def progress_cb(progress):
+            progress_values.append(progress)
+
+        def status_cb(message):
+            status_messages.append(message)
+
+        stderr_lines = [
+            "1+0 records in\n",
+            "1+0 records out\n",
+            "copied, 1.23 s, 4.56 MB/s\n",
+            "some unexpected warning from dd\n",
+        ]
+
+        popen_calls = []
+        envs = []
+        fake_popen = self._fake_popen_factory(stderr_lines, popen_calls, envs)
+        monkeypatch.setattr(flash_usb_module.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(flash_usb_module, "check_iso_signature", lambda p: True)
+        monkeypatch.setattr(flash_usb_module, "is_windows_iso", lambda p: False)
+        monkeypatch.setattr(flash_usb_module, "detect_iso_type", lambda p: flash_usb_module.IsoType.LINUX)
+
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as f:
+            f.write(b"\x00" * 100)
+            iso_path = f.name
+
+        with caplog.at_level("INFO", logger="lufus"):
+            try:
+                flash_usb_module.flash_usb("/dev/sdb", iso_path, progress_cb=progress_cb, status_cb=status_cb)
+            finally:
+                os.unlink(iso_path)
+
+        # Only the initial 0 milestone should be present;
+        # bookkeeping lines must not trigger additional progress_cb calls
+        assert progress_values == [0]
+
+        # Non-progress stderr lines now log at info level
+        unexpected_logs = [
+            record for record in caplog.records if "some unexpected warning from dd" in record.getMessage()
+        ]
+        assert unexpected_logs, "Unexpected stderr lines should produce an info log entry"

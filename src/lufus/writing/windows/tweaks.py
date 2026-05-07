@@ -1,4 +1,3 @@
-# Not tested, at least by me, I don't remember when that was added, and never used it nor really know what it's supposed to do.
 """Windows installation customization functions.
 
 These modify Windows installation media (boot.wim, autounattend.xml)
@@ -10,8 +9,7 @@ import html
 import re
 import subprocess
 import os
-import shutil
-from lufus.utils import get_mount_and_drive
+from lufus.utils import get_mount_and_drive, run_cmd
 from lufus import state
 from lufus.lufus_logging import get_logger
 
@@ -56,8 +54,8 @@ def win_hardware_bypass():
     cmd_string = "\n".join(commands) + "\n"
     log.info("win_hardware_bypass: injecting registry keys into boot.wim at %s...", mount)
     try:
-        os.makedirs("/media/tempwinmnt", exist_ok=True)
-        subprocess.run(["wimmountrw", f"{mount}/sources/boot.wim", "2", "/media/tempwinmnt"], check=True)
+        run_cmd(["sudo", "mkdir", "-p", "/media/tempwinmnt"])
+        run_cmd(["sudo", "wimmountrw", f"{mount}/sources/boot.wim", "2", "/media/tempwinmnt"])
         subprocess.run(
             ["chntpw", "e", "/media/tempwinmnt/Windows/System32/config/SYSTEM"],
             input=cmd_string,
@@ -65,8 +63,8 @@ def win_hardware_bypass():
             capture_output=True,
             check=True,
         )
-        subprocess.run(["wimunmount", "/media/tempwinmnt", "--commit"], check=True)
-        shutil.rmtree("/media/tempwinmnt", ignore_errors=True)
+        run_cmd(["sudo", "wimunmount", "/media/tempwinmnt", "--commit"])
+        run_cmd(["sudo", "rm", "-rf", "/media/tempwinmnt"])
         log.info("win_hardware_bypass: registry keys injected successfully.")
     except subprocess.CalledProcessError as e:
         log.error("win_hardware_bypass: CalledProcessError: %s", e.stderr)
@@ -81,8 +79,8 @@ def win_local_acc():
     cmd_string = "\n".join(commands) + "\n"
     log.info("win_local_acc: bypassing online account requirement at %s...", mount)
     try:
-        os.makedirs("/media/tempwinmnt", exist_ok=True)
-        subprocess.run(["wimmountrw", f"{mount}/sources/boot.wim", "2", "/media/tempwinmnt"], check=True)
+        run_cmd(["sudo", "mkdir", "-p", "/media/tempwinmnt"])
+        run_cmd(["sudo", "wimmountrw", f"{mount}/sources/boot.wim", "2", "/media/tempwinmnt"])
         subprocess.run(
             ["chntpw", "e", "/media/tempwinmnt/Windows/System32/config/SOFTWARE"],
             input=cmd_string,
@@ -90,8 +88,8 @@ def win_local_acc():
             capture_output=True,
             check=True,
         )
-        subprocess.run(["wimunmount", "/media/tempwinmnt", "--commit"], check=True)
-        shutil.rmtree("/media/tempwinmnt", ignore_errors=True)
+        run_cmd(["sudo", "wimunmount", "/media/tempwinmnt", "--commit"])
+        run_cmd(["sudo", "rm", "-rf", "/media/tempwinmnt"])
         log.info("win_local_acc: online account bypass applied successfully.")
     except subprocess.CalledProcessError as e:
         log.error("win_local_acc: CalledProcessError: %s", e.stderr)

@@ -1,5 +1,15 @@
 import os
 import re
+import subprocess
+from lufus.lufus_logging import get_logger
+
+log = get_logger(__name__)
+
+
+def run_cmd(cmd: list[str]):
+    """Wrapper for subprocess.run with logging and error checking."""
+    log.debug("run: %s", cmd)
+    subprocess.run(cmd, check=True)
 
 
 def elevate_privileges() -> None:
@@ -13,28 +23,14 @@ def elevate_privileges() -> None:
     # if the app was able to find them before elevation.
     env = os.environ.copy()
     if state.theme:
-        # Validate theme is a safe filename/path: no path separators, no shell metacharacters,
-        # and must resolve inside the config directory to prevent path traversal.
-        theme_val = str(state.theme)
-        if re.match(r"^[A-Za-z0-9_\-. ]+$", os.path.basename(theme_val)) and ".." not in theme_val:
-            env["LUFUS_THEME"] = theme_val
-        else:
-            import logging
-
-            logging.getLogger("lufus").warning(
-                "elevate_privileges: rejected suspicious LUFUS_THEME value %r",
-                theme_val,
-            )
+        # Validate theme is a safe filename/path: no path separators, no "..",
+        # and must be a basic filename to prevent path traversal.
+        theme = os.path.basename(state.theme)
+        if theme and theme == state.theme and ".." not in theme:
+            env["LUFUS_THEME"] = theme
 
     # Preserve DISPLAY and XAUTHORITY for GUI apps under pkexec/sudo
-    env_vars = [
-        "DISPLAY",
-        "XAUTHORITY",
-        "XDG_RUNTIME_DIR",
-        "WAYLAND_DISPLAY",
-        "PYTHONPATH",
-        "LUFUS_THEME",
-    ]
+    env_vars = ["DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "PYTHONPATH", "LUFUS_THEME"]
 
     cmd = ["pkexec", "env"]
     for var in env_vars:

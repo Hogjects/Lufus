@@ -51,7 +51,6 @@ class FlashWorker(QThread):
     progress = pyqtSignal(int)
     status = pyqtSignal(str)
     flash_done = pyqtSignal(bool)
-    request_tweaks = pyqtSignal()
 
     def __init__(self, options: dict, t: dict):
         super().__init__()
@@ -110,23 +109,20 @@ class FlashWorker(QThread):
                     self.status.emit(self._T.get("status_format_complete", "Format complete!"))
                 else:
                     self.status.emit(
-                        self._T.get(
-                            "status_format_failed",
-                            "Format FAILED. Check the log above for the exact error.",
-                        )
+                        self._T.get("status_format_failed", "Format FAILED. Check the log above for the exact error.")
                     )
 
             elif image_option == 0:  # Windows
-                # ISO mode (flash_mode 0) uses the specialised flash_windows path.
-                # Any other mode (e.g. DD) uses the generic flash_usb path.
-                scheme = PartitionScheme.SIMPLE_FAT32
-                success = flash_usb(
-                    device_node,
-                    iso_path,
-                    scheme,
-                    progress_cb=self.progress.emit,
-                    status_cb=self.status.emit,
-                )
+                if flash_mode == 0:
+                    # ISO mode for Windows (uses specialized flash_windows)
+                    # For Windows, we currently default to SIMPLE_FAT32 partition scheme
+                    # which handles splitting install.wim if necessary.
+                    scheme = PartitionScheme.SIMPLE_FAT32
+                    success = flash_usb(
+                        device_node, iso_path, scheme, progress_cb=self.progress.emit, status_cb=self.status.emit
+                    )
+                else:
+                    success = False
             else:
                 # Other flash modes (Linux, Other)
                 fs_text = options.get("fs_text", "ext4")

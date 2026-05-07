@@ -1,5 +1,4 @@
 from __future__ import annotations
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,13 +18,29 @@ def _fake_partitions(mount, device):
     return lambda all=False: [SimpleNamespace(mountpoint=mount, device=device)]
 
 
-def _fake_check_output(size="1000000000", label="MY_USB"):
-    def impl(cmd, **kwargs):
-        if "SIZE" in cmd:
-            return size + "\n"
-        return label + "\n"
+def _patch_pyudev(monkeypatch, size_sectors=None, label="MY_USB"):
+    """Patch pyudev so get_usb_info can run without real udev."""
+    from types import SimpleNamespace as SNS
 
-    return impl
+    class FakeAttributes:
+        def get(self, key, default=None):
+            if key == "size":
+                return str(size_sectors) if size_sectors is not None else None
+            return default
+
+    class FakeDevice:
+        attributes = FakeAttributes()
+
+        def get(self, key, default=None):
+            return label if key == "ID_FS_LABEL" else default
+
+    monkeypatch.setattr(gui_module.pyudev, "Context", lambda: SNS())
+    monkeypatch.setattr(
+        gui_module.pyudev.Devices,
+        "from_device_number",
+        lambda ctx, kind, rdev: FakeDevice(),
+    )
+    monkeypatch.setattr(gui_module.os, "stat", lambda path: SNS(st_rdev=0x803))
 
 
 class Testget_usb_infoNormalisedMountPath:
@@ -36,14 +51,14 @@ class Testget_usb_infoNormalisedMountPath:
 
     def test_trailing_slash_is_stripped(self, monkeypatch):
         monkeypatch.setattr(gui_module.psutil, "disk_partitions", _fake_partitions("/media/u/USB/", "/dev/sdb1"))
-        monkeypatch.setattr(gui_module.subprocess, "check_output", _fake_check_output())
+        _patch_pyudev(monkeypatch)
         result = get_usb_info("/media/u/USB/")
         assert result["mount_path"] == "/media/u/USB"
 
     def test_normalised_path_matches_normpath(self, monkeypatch, tmp_path):
         mount = str(tmp_path)
         monkeypatch.setattr(gui_module.psutil, "disk_partitions", _fake_partitions(mount, "/dev/sdc1"))
-        monkeypatch.setattr(gui_module.subprocess, "check_output", _fake_check_output())
+        _patch_pyudev(monkeypatch)
         result = get_usb_info(mount)
         import os
 
@@ -67,26 +82,33 @@ class Testget_usb_infoAllTrue:
         assert calls.get("all") is True
 
 
-class Testget_usb_infoTimeoutExpired:
-    """TimeoutExpired was previously swallowed by the broad Exception handler
-    with a generic message.  It must now be caught explicitly.
+class Testget_usb_infoPyudevError:
+    """Any exception from pyudev (permission, device-not-found, etc.) must be
+    caught and return None rather than propagating to the caller.
     """
 
-    def test_returns_empty_dict_on_timeout(self, monkeypatch):
+    def test_returns_none_when_pyudev_raises(self, monkeypatch):
+        from types import SimpleNamespace as SNS
+
         monkeypatch.setattr(gui_module.psutil, "disk_partitions", _fake_partitions("/media/u/USB", "/dev/sdb1"))
+        monkeypatch.setattr(gui_module.pyudev, "Context", lambda: SNS())
+        monkeypatch.setattr(gui_module.os, "stat", lambda path: SNS(st_rdev=0x803))
 
-        def raise_timeout(*args, **kwargs):
-            raise subprocess.TimeoutExpired(cmd="lsblk", timeout=5)
+        def raise_error(ctx, kind, rdev):
+            raise RuntimeError("simulated pyudev failure")
 
-        monkeypatch.setattr(gui_module.subprocess, "check_output", raise_timeout)
+        monkeypatch.setattr(gui_module.pyudev.Devices, "from_device_number", raise_error)
         result = get_usb_info("/media/u/USB")
         assert result is None
 
-    def test_timeout_handler_is_explicit(self):
-        import inspect
+    def test_returns_none_when_os_stat_raises(self, monkeypatch):
+        from types import SimpleNamespace as SNS
 
-        src = inspect.getsource(get_usb_info)
-        assert "TimeoutExpired" in src
+        monkeypatch.setattr(gui_module.psutil, "disk_partitions", _fake_partitions("/media/u/USB", "/dev/sdb1"))
+        monkeypatch.setattr(gui_module.pyudev, "Context", lambda: SNS())
+        monkeypatch.setattr(gui_module.os, "stat", lambda path: (_ for _ in ()).throw(PermissionError("no access")))
+        result = get_usb_info("/media/u/USB")
+        assert result is None
 
 
 class Testget_usb_infoForElse:

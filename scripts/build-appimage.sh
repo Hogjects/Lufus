@@ -4,17 +4,15 @@ set -euo pipefail
 ls -la
 
 # Install system dependencies
-## COMMENTED BECAUSE ALREADY HANDELED IN YAML
-# echo "------------ Installing system libraries ------------"
-# apt-get update && apt-get upgrade -y
-# INSTALLER="apt-get install -y"
-# if [[ -f requirements-system.txt ]]; then
-#     $INSTALLER $(cat requirements-system.txt) >> appimage-setup.log
-#     echo "System libraries installed."
-# else
-#     echo "requirements-system.txt not found!"
-#     exit 1
-# fi
+echo "------------ Installing system libraries ------------"
+INSTALLER="apt-get install -y"
+if [[ -f requirements-system.txt ]]; then
+    $INSTALLER $(cat requirements-system.txt) >> appimage-setup.log
+    echo "System libraries installed."
+else
+    echo "requirements-system.txt not found!"
+    exit 1
+fi
 
 if command -v python3 &>/dev/null; then
     PYTHON=python3

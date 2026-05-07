@@ -16,7 +16,7 @@ def load_translations(language="English"):
         with open(lang_file, encoding="utf-8-sig", newline="") as f:
             for row in csv.DictReader(f):
                 key = row.get("key", "").strip()
-                value = row.get("value", "")
+                value = row.get("value", "").strip()
                 if key:
                     t[key] = value
     return t

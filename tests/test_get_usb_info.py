@@ -1,5 +1,4 @@
 from __future__ import annotations
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +9,55 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from lufus.drives import get_usb_info as get_usb_info_module
+
+
+# ---------------------------------------------------------------------------
+# Shared pyudev mock helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_stat(rdev=0x803):
+    return SimpleNamespace(st_rdev=rdev)
+
+
+def _make_fake_device(size_sectors=None, label=""):
+    """Return a minimal pyudev device stub."""
+
+    class FakeAttributes:
+        def get(self, key, default=None):
+            if key == "size":
+                return str(size_sectors) if size_sectors is not None else None
+            return default
+
+    class FakeDevice:
+        attributes = FakeAttributes()
+
+        def get(self, key, default=None):
+            if key == "ID_FS_LABEL":
+                return label or None
+            return default
+
+    return FakeDevice()
+
+
+def _patch_pyudev(monkeypatch, device_stub):
+    """Patch pyudev.Context and pyudev.Devices.from_device_number."""
+    monkeypatch.setattr(get_usb_info_module.pyudev, "Context", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        get_usb_info_module.pyudev.Devices,
+        "from_device_number",
+        lambda ctx, kind, rdev: device_stub,
+    )
+    monkeypatch.setattr(
+        get_usb_info_module.os,
+        "stat",
+        lambda path: _make_fake_stat(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 
 def test_get_usb_info_returns_empty_when_mount_not_found(monkeypatch) -> None:
@@ -31,15 +79,7 @@ def test_get_usb_info_returns_expected_dictionary(monkeypatch) -> None:
         "disk_partitions",
         lambda *args, **kwargs: [SimpleNamespace(mountpoint=mount_path, device=device_node)],
     )
-
-    def fake_check_output(cmd, text=True, timeout=5):
-        if cmd[-2:] == ["SIZE", device_node]:
-            return str(16 * 1024**3)
-        if cmd[-2:] == ["LABEL", device_node]:
-            return "MYUSB\n"
-        raise AssertionError(f"Unexpected command: {cmd}")
-
-    monkeypatch.setattr(get_usb_info_module.subprocess, "check_output", fake_check_output)
+    _patch_pyudev(monkeypatch, _make_fake_device(size_sectors=16 * 1024**3 // 512, label="MYUSB"))
 
     result = get_usb_info_module.get_usb_info(mount_path)
     assert result == {
@@ -58,21 +98,14 @@ def test_get_usb_info_uses_mount_basename_when_label_is_empty(monkeypatch) -> No
         "disk_partitions",
         lambda *args, **kwargs: [SimpleNamespace(mountpoint=mount_path, device=device_node)],
     )
-
-    def fake_check_output(cmd, text=True, timeout=5):
-        if cmd[-2:] == ["SIZE", device_node]:
-            return str(8 * 1024**3)
-        if cmd[-2:] == ["LABEL", device_node]:
-            return "\n"
-        raise AssertionError(f"Unexpected command: {cmd}")
-
-    monkeypatch.setattr(get_usb_info_module.subprocess, "check_output", fake_check_output)
+    _patch_pyudev(monkeypatch, _make_fake_device(size_sectors=8 * 1024**3 // 512, label=""))
 
     result = get_usb_info_module.get_usb_info(mount_path)
     assert result["label"] == "NO_LABEL"
 
 
-def test_get_usb_info_returns_empty_when_lsblk_fails(monkeypatch) -> None:
+def test_get_usb_info_returns_empty_when_pyudev_fails(monkeypatch) -> None:
+    """get_usb_info must return None when pyudev.Devices.from_device_number raises."""
     mount_path = "/media/testuser/USB"
     device_node = "/dev/sdb1"
 
@@ -81,10 +114,21 @@ def test_get_usb_info_returns_empty_when_lsblk_fails(monkeypatch) -> None:
         "disk_partitions",
         lambda *args, **kwargs: [SimpleNamespace(mountpoint=mount_path, device=device_node)],
     )
+    monkeypatch.setattr(
+        get_usb_info_module.os,
+        "stat",
+        lambda path: _make_fake_stat(),
+    )
+    monkeypatch.setattr(get_usb_info_module.pyudev, "Context", lambda: SimpleNamespace())
 
-    def raise_lsblk_error(*args, **kwargs):
-        raise subprocess.CalledProcessError(returncode=1, cmd="lsblk")
+    def failing_from_device_number(context, device_type, device_number):
+        raise RuntimeError("pyudev failure in from_device_number")
 
-    monkeypatch.setattr(get_usb_info_module.subprocess, "check_output", raise_lsblk_error)
+    monkeypatch.setattr(
+        get_usb_info_module.pyudev.Devices,
+        "from_device_number",
+        failing_from_device_number,
+    )
 
-    assert get_usb_info_module.get_usb_info(mount_path) is None
+    result = get_usb_info_module.get_usb_info(mount_path)
+    assert result is None

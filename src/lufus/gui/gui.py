@@ -6,10 +6,13 @@ import os
 import platform
 import getpass
 import time
-import ssl
+import signal
+import termios
+import requests
 import urllib.parse
 import urllib.request
 import webbrowser
+import psutil
 from typing import Dict, Any
 from packaging import version
 from platformdirs import user_config_dir
@@ -43,7 +46,6 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QIcon
 
 from lufus import state
-from lufus import state as states
 from lufus.drives.autodetect_usb import UsbMonitor
 from lufus.lufus_logging import get_logger
 from lufus.gui.themes.icon_utils import svg_icon
@@ -51,9 +53,8 @@ from lufus.gui.constants import THEME_DIR, ASSETS_DIR, ICONS
 from lufus.gui.scale import Scale
 from lufus.gui.i18n import load_translations
 from lufus.gui.redirector import StdoutRedirector
-from lufus.gui.dialogs import LogWindow, AboutWindow, SettingsDialog, WinTweaks
+from lufus.gui.dialogs import LogWindow, AboutWindow, SettingsDialog
 from lufus.gui.workers import FlashWorker, VerifyWorker
-from lufus.writing.windows.tweaks import *
 
 # log level mapping for colors and methods
 _LOG_LEVELS = {
@@ -64,6 +65,126 @@ _LOG_LEVELS = {
     "ERROR": ("error", "#e05555"),
     "CRITICAL": ("critical", "#e05555"),
 }
+
+
+# ---------------------------------------------------------------------------
+# /proc-based helpers (replace lsof / fuser / pgrep)
+# ---------------------------------------------------------------------------
+
+
+def _procs_using_device_fd(device_node: str) -> list[tuple[int, str]]:
+    """Return ``(pid, comm)`` for each process with *device_node* open as an fd.
+
+    Walks ``/proc/<pid>/fd/`` and compares ``st_rdev`` against the device.
+    Requires the caller to have sufficient permissions (typically root).
+    """
+    found: list[tuple[int, str]] = []
+    try:
+        target_rdev = os.stat(device_node).st_rdev
+    except OSError:
+        return found
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            for fd_link in (entry / "fd").iterdir():
+                try:
+                    if os.stat(str(fd_link)).st_rdev == target_rdev:
+                        comm = (entry / "comm").read_text().strip()
+                        found.append((int(entry.name), comm))
+                        break
+                except OSError:
+                    pass
+        except (PermissionError, OSError):
+            pass
+    return found
+
+
+def _procs_with_device_mounted(device_node: str) -> list[tuple[int, str]]:
+    """Return ``(pid, comm)`` for each process that has *device_node* mounted.
+
+    Walks ``/proc/<pid>/mountinfo`` and matches the device's ``major:minor``.
+    """
+    found: list[tuple[int, str]] = []
+    try:
+        st = os.stat(device_node)
+        dev_str = f"{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}"
+    except OSError:
+        return found
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            for line in (entry / "mountinfo").read_text().splitlines():
+                fields = line.split()
+                if len(fields) >= 3 and fields[2] == dev_str:
+                    comm = (entry / "comm").read_text().strip()
+                    found.append((int(entry.name), comm))
+                    break
+        except (PermissionError, OSError):
+            pass
+    return found
+
+
+def _real_user_home() -> Path:
+    """Return the home directory of the *actual* user, not root's home.
+
+    When Lufus is launched via ``pkexec`` or ``sudo`` (as it must be for raw
+    device access), ``Path.home()`` resolves to ``/root``, which is wrong for
+    locating the user's downloads.  This function checks the standard privilege-
+    escalation environment variables to find the invoking user's home instead.
+    """
+    import pwd
+
+    # pkexec sets PKEXEC_UID to the UID of the calling user
+    pkexec_uid = os.environ.get("PKEXEC_UID", "").strip()
+    if pkexec_uid.isdigit():
+        try:
+            return Path(pwd.getpwuid(int(pkexec_uid)).pw_dir)
+        except KeyError:
+            pass
+
+    # sudo/su preserve SUDO_USER with the original username
+    sudo_user = os.environ.get("SUDO_USER", "").strip()
+    if sudo_user and sudo_user != "root":
+        try:
+            return Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+
+    return Path.home()
+
+
+def _xdg_download_dir() -> Path:
+    """Return the user's XDG download directory without invoking ``xdg-user-dir``.
+
+    Resolution order (mirrors what ``xdg-user-dir`` itself does):
+    1. ``$XDG_DOWNLOAD_DIR`` environment variable
+    2. ``XDG_DOWNLOAD_DIR`` entry in ``~/.config/user-dirs.dirs``
+    3. ``<real_home>/Downloads`` as a universal fallback
+
+    Uses :func:`_real_user_home` so that the result is correct even when the
+    process is running as root via ``pkexec``/``sudo``.
+    """
+    real_home = _real_user_home()
+
+    env_val = os.environ.get("XDG_DOWNLOAD_DIR", "").strip()
+    if env_val:
+        return Path(env_val)
+    user_dirs_file = real_home / ".config" / "user-dirs.dirs"
+    try:
+        for raw_line in user_dirs_file.read_text(errors="replace").splitlines():
+            line = raw_line.strip()
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            if key.strip() == "XDG_DOWNLOAD_DIR":
+                # Values are shell-quoted and may use $HOME
+                path_str = val.strip().strip('"').replace("$HOME", str(real_home))
+                return Path(path_str)
+    except OSError:
+        pass
+    return real_home / "Downloads"
 
 
 class BackgroundWidget(QWidget):
@@ -193,23 +314,13 @@ class LufusWindow(QMainWindow):
         self.log_message(f"Startup USB devices passed in: {list((usb_devices or {}).keys()) or 'none'}")
         self.flash_worker = None
         self.log_message(f"UI scale factor: {self._S.f():.3f}  (base 96 DPI)")
-        self._check_latest_download()
-
         # check for new updates function call
         QTimer.singleShot(100, self.get_latest_release)
 
     def _check_latest_download(self):
         if state.iso_path:
             return
-        try:
-            result = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True, text=True, timeout=2)
-            downloads = (
-                Path(result.stdout.strip())
-                if result.returncode == 0 and result.stdout.strip()
-                else Path.home() / "Downloads"
-            )
-        except Exception:
-            downloads = Path.home() / "Downloads"
+        downloads = _xdg_download_dir()
         if not downloads.is_dir():
             return
         try:
@@ -605,19 +716,7 @@ class LufusWindow(QMainWindow):
         # filesystem cluster and flash option selectors :D
         self.lbl_fs = QLabel(self._T.get("lbl_file_system", "File System"))
         self.combo_fs = QComboBox()
-        self.all_fs_options = [
-            "NTFS",
-            "FAT32",
-            "exFAT",
-            "ext4",
-            "UDF",
-            "HFS+",
-            "ext2",
-            "ext3",
-            "Btrfs",
-            "XFS",
-            "ZFS",
-        ]
+        self.all_fs_options = ["NTFS", "FAT32", "exFAT", "ext4", "UDF", "HFS+", "ext2", "ext3", "Btrfs", "XFS", "ZFS"]
         self.combo_fs.addItems(["NTFS", "FAT32", "exFAT"])
         self.combo_fs.currentTextChanged.connect(self.updateFS)
 
@@ -676,8 +775,6 @@ class LufusWindow(QMainWindow):
         # sha256 verification checkbox and input :D
         self.chk_verify = QCheckBox(self._T.get("chk_verify_hash", "Verify SHA256 Checksum"))
         self.chk_verify.stateChanged.connect(self.update_verify_hash)
-        self.lbl_expected_hash = QLabel(self._T.get("lbl_expected_hash", "Expected SHA256:"))
-        self.lbl_expected_hash.setVisible(False)
         self.input_hash = QLineEdit()
         self.input_hash.setPlaceholderText(self._T.get("input_hash_placeholder", "Enter expected SHA256 hash here..."))
         self.input_hash.setEnabled(False)
@@ -693,7 +790,6 @@ class LufusWindow(QMainWindow):
         chk_layout.addWidget(self.chk_badblocks)
         chk_layout.addWidget(self.combo_badblocks)
         chk_layout.addWidget(self.chk_verify)
-        chk_layout.addWidget(self.lbl_expected_hash)
         chk_layout.addWidget(self.input_hash)
 
         main_layout.addLayout(chk_layout)
@@ -837,10 +933,7 @@ class LufusWindow(QMainWindow):
         except Exception as e:
             # handle scan errors :3
             self.statusBar.showMessage(self._T.get("status_scan_failed", "Scan Failed"), 3000)
-            self.log_message(
-                f"USB scan raised exception: {type(e).__name__}: {str(e)}",
-                level="ERROR",
-            )
+            self.log_message(f"USB scan raised exception: {type(e).__name__}: {str(e)}", level="ERROR")
             QMessageBox.critical(
                 self,
                 self._T.get("msgbox_scan_error_title", "Scan Error"),
@@ -998,8 +1091,6 @@ class LufusWindow(QMainWindow):
         # update sha256 verification setting :D
         state.verify_hash = self.chk_verify.isChecked()
         self.input_hash.setEnabled(state.verify_hash)
-        if hasattr(self, "lbl_expected_hash"):
-            self.lbl_expected_hash.setVisible(state.verify_hash)
         self._animate_widget(self.input_hash, state.verify_hash, "_anim_hash")
         self.log_message(f"SHA256 verification: {'enabled' if state.verify_hash else 'disabled'}")
 
@@ -1009,7 +1100,7 @@ class LufusWindow(QMainWindow):
 
     def _load_latest_download_iso(self):
         # check downloads folder for the most recently modified iso :3
-        downloads_dir = Path.home() / "Downloads"
+        downloads_dir = _xdg_download_dir()
         if not downloads_dir.is_dir():
             return
         isos = sorted(downloads_dir.glob("*.iso"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -1102,11 +1193,8 @@ class LufusWindow(QMainWindow):
         file_name, _ = QFileDialog.getOpenFileName(
             self,
             self._T.get("dlg_select_image_title", "Select Image"),
-            "",
-            self._T.get(
-                "dlg_select_image_filter",
-                "Disk Images (*.iso *.dmg *.img *.bin *.raw);;All Files (*)",
-            ),
+            str(_xdg_download_dir()),
+            self._T.get("dlg_select_image_filter", "Disk Images (*.iso *.dmg *.img *.bin *.raw);;All Files (*)"),
         )
         if file_name:
             # load selected image file :3
@@ -1123,10 +1211,9 @@ class LufusWindow(QMainWindow):
         """Automatically detect ISO type and update UI selectors."""
         from lufus.writing.windows.detect import detect_iso_type, IsoType
 
-        # Non-ISO raw images (.img, .bin, .raw, .dmg) are always "Other / DD mode"
-        if not iso_path.lower().endswith(".iso"):
-            self.log_message(f"Non-ISO image ({Path(iso_path).suffix or 'no ext'}), defaulting to Other/DD mode")
-            self.combo_image_option.setCurrentIndex(2)  # Other
+        # Support various disk image formats, not just .iso
+        valid_extensions = (".iso", ".img", ".dmg", ".bin", ".raw")
+        if not iso_path.lower().endswith(valid_extensions):
             return
 
         self.log_message(f"Detecting ISO type for: {iso_path}...")
@@ -1185,10 +1272,7 @@ class LufusWindow(QMainWindow):
         if self.about_window:
             self.about_window.close()
         self.about_window = AboutWindow(self)
-        content = self._T.get(
-            "about_content",
-            "Lufus - USB Flash Tool\n\nA simple, open-source USB flashing utility.",
-        )
+        content = self._T.get("about_content", "Lufus - USB Flash Tool\n\nA simple, open-source USB flashing utility.")
         flat = getattr(self, "_flat_theme", {})
         font_family = flat.get("fonts_family", "")
         fg_color = flat.get("colors_fg", "")
@@ -1261,13 +1345,6 @@ class LufusWindow(QMainWindow):
         self.btn_cancel.setText(self._T.get("btn_cancel", "Cancel"))
         self.statusBar.showMessage(self._T.get("status_ready", "Ready"), 0)
 
-        # update toolbar button tooltips :3
-        self.btn_refresh.setToolTip(self._T.get("tooltip_refresh", "Refresh USB devices (Ctrl+R)"))
-        self.btn_icon1.setToolTip(self._T.get("tooltip_website", "Website"))
-        self.btn_icon2.setToolTip(self._T.get("tooltip_about", "About"))
-        self.btn_icon3.setToolTip(self._T.get("tooltip_settings", "Settings"))
-        self.btn_icon4.setToolTip(self._T.get("tooltip_log", "Log"))
-
         # update image option combo :D
         current_img_idx = self.combo_image_option.currentIndex()
         self.combo_image_option.blockSignals(True)
@@ -1301,9 +1378,14 @@ class LufusWindow(QMainWindow):
 
         # update verification controls :D
         self.chk_verify.setText(self._T.get("chk_verify_hash", "Verify SHA256 Checksum"))
-        self.lbl_expected_hash.setText(self._T.get("lbl_expected_hash", "Expected SHA256:"))
         self.input_hash.setPlaceholderText(self._T.get("input_hash_placeholder", "Enter expected SHA256 hash here..."))
         self.input_label.setPlaceholderText(self._T.get("lbl_volume_label", "Volume Label"))
+
+        self.btn_icon1.setToolTip(self._T.get("tooltip_website", "website"))
+        self.btn_icon2.setToolTip(self._T.get("tooltip_about", "about"))
+        self.btn_icon3.setToolTip(self._T.get("tooltip_settings", "settings"))
+        self.btn_icon4.setToolTip(self._T.get("tooltip_log", "log"))
+        self.btn_refresh.setToolTip(self._T.get("tooltip_refresh", "refresh"))
 
         # update boot combo default text :3
         if self.combo_boot.itemText(0) == "installation_media.iso" or self.combo_boot.itemText(0) == self._T.get(
@@ -1336,12 +1418,13 @@ class LufusWindow(QMainWindow):
             self.log_message(f"Cancellation requested for device {device_node}", level="WARN")
 
             try:
-                # check what processes are using device :3
-                lsof = subprocess.run(["lsof", device_node], capture_output=True, text=True)
-                if lsof.returncode == 0:
-                    self.log_message(f"Processes using {device_node} before kill:\n{lsof.stdout}")
+                # check what processes have the device open via /proc/*/fd/
+                procs = _procs_using_device_fd(device_node)
+                if procs:
+                    listing = "\n".join(f"  pid={pid} ({comm})" for pid, comm in procs)
+                    self.log_message(f"Processes using {device_node} before kill:\n{listing}")
             except Exception as e:
-                self.log_message(f"Could not run lsof: {e}")
+                self.log_message(f"Could not scan /proc for open handles: {e}")
 
             if self.flash_worker and self.flash_worker.isRunning():
                 # terminate flash worker thread :D
@@ -1353,11 +1436,22 @@ class LufusWindow(QMainWindow):
                     self.flash_worker.wait(2000)
 
             try:
-                # kill processes using device :3
-                subprocess.run(["fuser", "-k", device_node], timeout=5, check=False)
-                self.log_message("fuser -k executed")
+                # kill processes that have the device mounted, per /proc/*/mountinfo
+                killed = []
+                for pid, comm in _procs_with_device_mounted(device_node):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                        killed.append(f"pid={pid} ({comm})")
+                    except ProcessLookupError:
+                        pass  # already gone
+                    except PermissionError as exc:
+                        self.log_message(f"Could not kill pid={pid} ({comm}): {exc}")
+                if killed:
+                    self.log_message("Sent SIGKILL to: " + ", ".join(killed))
+                else:
+                    self.log_message("No mounted-device processes found to kill")
             except Exception as e:
-                self.log_message(f"fuser fallback failed: {e}")
+                self.log_message(f"Device-kill fallback failed: {e}")
 
             if hasattr(self, "verify_worker") and self.verify_worker and self.verify_worker.isRunning():
                 # terminate verify worker :D
@@ -1367,12 +1461,19 @@ class LufusWindow(QMainWindow):
                 self.log_message("Verify worker terminated")
 
             if self.is_terminal:
-                # reset terminal state :3
+                # reset terminal state using termios instead of stty(1)
                 try:
-                    subprocess.run(["stty", "sane"], timeout=1, check=False)
-                    self.log_message("Terminal reset to sane state")
+                    fd = sys.stdin.fileno()
+                    attrs = termios.tcgetattr(fd)
+                    # Re-enable: NL translation, output processing,
+                    # canonical mode, echo, and signal key processing
+                    attrs[0] |= termios.ICRNL  # iflag
+                    attrs[1] |= termios.OPOST  # oflag
+                    attrs[3] |= termios.ICANON | termios.ECHO | termios.ISIG  # lflag
+                    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+                    self.log_message("Terminal restored to sane state")
                 except Exception as e:
-                    self.log_message(f"Failed to reset terminal: {e}")
+                    self.log_message(f"Failed to restore terminal: {e}")
 
             # reset ui state :D
             self.progress_bar.setRange(0, 100)  # exit indeterminate mode
@@ -1421,10 +1522,7 @@ class LufusWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     self._T.get("msgbox_invalid_hash_title", "Invalid Hash"),
-                    self._T.get(
-                        "msgbox_invalid_hash_body",
-                        "The provided SHA256 hash is invalid.",
-                    ),
+                    self._T.get("msgbox_invalid_hash_body", "The provided SHA256 hash is invalid."),
                 )
                 return
 
@@ -1445,10 +1543,6 @@ class LufusWindow(QMainWindow):
             self.verify_worker.start()
         else:
             # skip verification and start flash :3
-            if states.image_option == 0 and states.currentflash == 0:
-                dlg = WinTweaks(self)
-                if dlg.exec() == QDialog.DialogCode.Rejected:
-                    return
             self.perform_flash()
 
     def on_verify_finished(self, success: bool):
@@ -1456,14 +1550,6 @@ class LufusWindow(QMainWindow):
         if success:
             self.log_message("SHA256 verification successful, proceeding to flash")
             self._clear_speed_eta()
-            if states.image_option == 0 and states.currentflash == 0:
-                dlg = WinTweaks(self)
-                if dlg.exec() == QDialog.DialogCode.Rejected:
-                    self.btn_start.setEnabled(True)
-                    self.btn_cancel.setEnabled(False)
-                    self.progress_bar.setValue(0)
-                    self.progress_bar.setFormat("")
-                    return
             self.perform_flash()
         else:
             # verification failed  (╯°□°)╯( ┻━┻
@@ -1512,7 +1598,6 @@ class LufusWindow(QMainWindow):
         self.flash_worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         self.flash_worker.status.connect(self._on_flash_status, Qt.ConnectionType.QueuedConnection)
         self.flash_worker.flash_done.connect(self.on_flash_finished, Qt.ConnectionType.QueuedConnection)
-        self.flash_worker.request_tweaks.connect(self.show_tweak_dialog, Qt.ConnectionType.QueuedConnection)
         self.flash_worker.start()
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
@@ -1552,7 +1637,6 @@ class LufusWindow(QMainWindow):
         self.flash_worker.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
         self.flash_worker.status.connect(self._on_flash_status, Qt.ConnectionType.QueuedConnection)
         self.flash_worker.flash_done.connect(self.on_flash_finished, Qt.ConnectionType.QueuedConnection)
-        self.flash_worker.request_tweaks.connect(self.show_tweak_dialog, Qt.ConnectionType.QueuedConnection)
         self.flash_worker.start()
         self.btn_start.setEnabled(False)
         self.btn_cancel.setEnabled(True)
@@ -1576,18 +1660,7 @@ class LufusWindow(QMainWindow):
             # flash succeeded :D
             self.progress_bar.setValue(100)
             self.progress_bar.setFormat(self._T.get("progress_complete", "Complete"))
-            # change from fo to tweaks
             self.log_message("Flash operation finished with result: SUCCESS")
-            if states.image_option == 0 and states.currentflash == 0:
-                if getattr(states, "win_hardware_bypass", 0) == 1:
-                    win_hardware_bypass()
-                if getattr(states, "win_microsoft_acc", 0) == 1:
-                    if getattr(states, "win_local_acc_chk", 0) == 1:
-                        win_local_acc_name()
-                    else:
-                        win_local_acc()
-                if getattr(states, "win_privacy", 0) == 1:
-                    win_skip_privacy_questions()
             QMessageBox.information(
                 self,
                 self._T.get("msgbox_success_title", "Success"),
@@ -1676,8 +1749,7 @@ class LufusWindow(QMainWindow):
         self.combo_image_option.setAccessibleName(self._T.get("acc_image_option", "Image option selector"))
         self.combo_image_option.setAccessibleDescription(
             self._T.get(
-                "acc_image_option_desc",
-                "Choose the type of image to write: Windows, Linux, Other, or Format Only",
+                "acc_image_option_desc", "Choose the type of image to write: Windows, Linux, Other, or Format Only"
             )
         )
         self.input_label.setAccessibleName(self._T.get("acc_volume_label", "Volume label input"))
@@ -1694,10 +1766,7 @@ class LufusWindow(QMainWindow):
         self.chk_verify.setAccessibleName(self._T.get("acc_verify_hash", "Verify SHA256 checksum checkbox"))
         self.input_hash.setAccessibleName(self._T.get("acc_hash_input", "Expected SHA256 hash input"))
         self.input_hash.setAccessibleDescription(
-            self._T.get(
-                "acc_hash_input_desc",
-                "Paste the expected 64-character SHA256 hash here",
-            )
+            self._T.get("acc_hash_input_desc", "Paste the expected 64-character SHA256 hash here")
         )
         self.progress_bar.setAccessibleName(self._T.get("acc_progress", "Operation progress bar"))
         self.btn_start.setAccessibleName(self._T.get("acc_start", "Start operation"))
@@ -1719,23 +1788,24 @@ class LufusWindow(QMainWindow):
     def check_polkit_agent(self):
         # check if a polkit authentication agent is running :3
         # returns true if found false otherwise
+        agents = [
+            "polkit-gnome-authentication-agent-1",
+            "polkit-kde-authentication-agent-1",
+            "lxqt-policykit-agent",
+            "mate-polkit",
+            "polkit-1-agent",
+        ]
         try:
-            # common agent process names :D
-            agents = [
-                "polkit-gnome-authentication-agent-1",
-                "polkit-kde-authentication-agent-1",
-                "lxqt-policykit-agent",
-                "mate-polkit",
-                "polkit-1-agent",
-            ]
-            # use pgrep to search for any of these :3
-            for agent in agents:
-                result = subprocess.run(["pgrep", "-f", agent], capture_output=True)
-                if result.returncode == 0:
-                    return True
+            for proc in psutil.process_iter(["cmdline"]):
+                try:
+                    cmdline = " ".join(proc.info["cmdline"] or [])
+                    if any(agent in cmdline for agent in agents):
+                        return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
             return False
         except Exception:
-            # if pgrep fails assume agent might be present better to try :D
+            # if process scan fails assume agent might be present better to try :D
             return True
 
     def get_latest_release(self):
@@ -1744,41 +1814,25 @@ class LufusWindow(QMainWindow):
         url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
         current_version = state.version
         try:
-            ssl_ctx = ssl.create_default_context()
-            req = urllib.request.urlopen(url, timeout=5, context=ssl_ctx)
+            req = urllib.request.urlopen(url, timeout=5)
             if req.status == 200:
                 data = json.loads(req.read().decode())
                 tag_name = data.get("tag_name", "")
                 if not tag_name:
-                    self.log_message(
-                        "Update check: missing tag_name in API response",
-                        level="WARNING",
-                    )
+                    self.log_message("Update check: missing tag_name in API response", level="WARNING")
                     return
                 try:
                     is_newer = version.parse(tag_name) > version.parse(current_version)
                 except Exception:
-                    self.log_message(
-                        f"Update check: could not parse version tag {tag_name!r}",
-                        level="WARNING",
-                    )
+                    self.log_message(f"Update check: could not parse version tag {tag_name!r}", level="WARNING")
                     return
                 if is_newer:
-                    self.log_message(
-                        f"New version found: {tag_name} > {current_version}",
-                        level="DEBUG",
-                    )
+                    self.log_message(f"New version found: {tag_name} > {current_version}", level="DEBUG")
                 else:
-                    self.log_message(
-                        f"Running latest release build: {tag_name} <= {current_version}",
-                        level="INFO",
-                    )
+                    self.log_message(f"Running latest release build: {tag_name} <= {current_version}", level="INFO")
                     return
             else:
-                self.log_message(
-                    f"Couldn't get latest release, response: {req.status}",
-                    level="WARNING",
-                )
+                self.log_message(f"Couldn't get latest release, response: {req.status}", level="WARNING")
                 return
         except Exception as e:
             self.log_message(f"Update check failed: {e}", level="ERROR")
@@ -1798,11 +1852,6 @@ class LufusWindow(QMainWindow):
             webbrowser.open("https://github.com/Hog185/Lufus/releases")
         else:
             self.log_message(f"download later button clicked", level="DEBUG")
-
-    # for win twaks
-    def show_tweak_dialog(self):
-        dialog = WinTweaks(self)
-        dialog.exec()
 
 
 if __name__ == "__main__":

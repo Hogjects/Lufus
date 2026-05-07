@@ -92,8 +92,17 @@ def flash_usb(
         _status(f"Spawning dd: {' '.join(dd_args)}")
         _status(f"Writing {iso_size:,} bytes to {shlex.quote(device)}, this may take several minutes...")
 
+        # Build the environment with LC_ALL=C so dd's byte-count output uses the
+        # predictable decimal format regardless of the system locale.  Copy
+        # os.environ rather than mutating it so the global environment is unchanged.
+        env = {**os.environ, "LC_ALL": "C"}
+
+        # dd_args is constructed from a validated device path (regex-checked above)
+        # and a user-supplied iso_path.  The list form of Popen (not shell=True)
+        # means each element is passed directly to execve, so there is no shell
+        # injection risk here.
         try:
-            process = subprocess.Popen(dd_args, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
+            process = subprocess.Popen(dd_args, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, env=env)
         except FileNotFoundError:
             log.error("Flash failed: 'dd' utility not found. Install coreutils.")
             _status("Flash failed: 'dd' utility not found. Install coreutils.")
@@ -101,30 +110,58 @@ def flash_usb(
 
         _status(f"dd process started with PID {process.pid}")
 
+        _status("Flash starting...")
+        if progress_cb:
+            progress_cb(0)
+
+        # dd status=progress writes updates separated by \r (carriage return),
+        # not \n.  Reading line-by-line from process.stderr blocks until a \n
+        # is seen, so progress updates would only arrive at the very end.
+        # read1() returns whatever bytes are currently in the pipe buffer
+        # without waiting for a newline, letting us process \r-terminated
+        # progress lines in real time.
         buf = b""
-        last_pct = -1
         while True:
-            chunk = process.stderr.readline()
+            chunk = process.stderr.read1(65536)
             if not chunk:
+                # Flush any remaining partial stderr fragment so it is not lost
+                if buf:
+                    decoded = buf.decode(errors="replace").rstrip("\r\n")
+                    if decoded:
+                        # Log at info to avoid alarming users with benign dd output
+                        log.info("dd stderr (final fragment): %s", decoded)
                 break
             buf += chunk
-            parts = re.split(rb"[\r\n]", buf)
-            buf = parts[-1]
-            for line in parts[:-1]:
-                line = line.strip()
-                if not line:
+            segments = re.split(rb"[\r\n]", buf)
+            # keep the last (possibly incomplete) segment for the next iteration
+            buf = segments[-1]
+            for segment_bytes in segments[:-1]:
+                line_str = segment_bytes.decode("utf-8", errors="replace").strip()
+                if not line_str:
                     continue
-                m = re.match(rb"^(\d+)\s+bytes", line)
-                if m and iso_size > 0:
-                    bytes_done = int(m.group(1))
-                    pct = min(int(bytes_done * 100 / iso_size), 99)
-                    if pct != last_pct:
-                        _status(f"dd progress: {bytes_done:,} / {iso_size:,} bytes ({pct}%)")
-                        last_pct = pct
+
+                # Percentage progress line (e.g. "50% completed" generated from
+                # dd byte output, or pv-style "50%")
+                pct_match = re.search(r"(\d+)%", line_str)
+                if pct_match and iso_size > 0:
+                    pct_int = min(int(pct_match.group(1)), 100)
+                    _status(line_str)
                     if progress_cb:
-                        progress_cb(pct)
+                        progress_cb(pct_int)
+                elif re.match(r"^\d+\s+bytes", line_str) and iso_size > 0:
+                    # dd status=progress byte-count line
+                    m = re.match(r"^(\d+)", line_str)
+                    bytes_done = int(m.group(1))
+                    pct_int = min(int(bytes_done * 100 / iso_size), 99)
+                    status_str = f"{bytes_done:,} / {iso_size:,} bytes ({pct_int}% completed)"
+                    _status(status_str)
+                    if progress_cb:
+                        progress_cb(pct_int)
+                elif re.search(r"\brecords (in|out)\b", line_str) or re.search(r"\bcopied\b", line_str):
+                    # dd bookkeeping lines — informational only, not progress events
+                    pass
                 else:
-                    log.warning("dd stderr: %s", line.decode("utf-8", errors="replace"))
+                    log.info("dd stderr: %s", line_str)
 
         process.wait()
         _status(f"dd process exited with return code {process.returncode}")

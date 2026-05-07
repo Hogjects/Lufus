@@ -10,20 +10,10 @@ from typing import TypedDict
 from lufus import state
 from lufus.lufus_logging import get_logger
 from lufus.writing.partition_scheme import PartitionScheme
+from lufus.utils import run_cmd
 
 
 log = get_logger(__name__)
-
-
-class PartitionInfo(TypedDict):
-    role: str
-    path: str
-
-
-def run_cmd(cmd):
-    """Wrapper for subprocess.run with logging and error checking."""
-    log.debug("run: %s", cmd)
-    subprocess.run(cmd, check=True)
 
 
 def _status_print(msg: str):
@@ -71,12 +61,12 @@ def _fix_efi_bootloader(efi_mount):
 
     log.info("EFI bootloader fix: BOOTX64.EFI not found, will attempt to create at %s", boot_dir)
     bootx64 = os.path.join(boot_dir, "BOOTX64.EFI")
-    os.makedirs(boot_dir, exist_ok=True)
+    run_cmd(["sudo", "mkdir", "-p", boot_dir])
     log.info("EFI bootloader fix: created directory %s", boot_dir)
 
     src = _find_path_case_insensitive(efi_mount, "EFI", "Microsoft", "Boot", "bootmgfw.efi")
     if src:
-        shutil.copy2(src, bootx64)
+        run_cmd(["sudo", "cp", src, bootx64])
         log.info("EFI bootloader fix: copied %s -> %s", src, bootx64)
         return
 
@@ -267,38 +257,30 @@ def _copy_efi_boot_files(iso_mount, mount_efi, _status):
     """Copy EFI boot files from ISO to the EFI partition."""
     _status("Copying EFI boot files to EFI partition...")
 
+    # EFI
     efi_src = _find_path_case_insensitive(iso_mount, "EFI")
     if efi_src:
         efi_items = os.listdir(efi_src)
         _status(f"Found EFI/ with {len(efi_items)} items: {efi_items}")
-        for item in efi_items:
-            src_path = os.path.join(efi_src, item)
-            dst_path = os.path.join(mount_efi, "EFI", item)
-            if os.path.isdir(src_path):
-                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-            else:
-                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                shutil.copy2(src_path, dst_path)
+        efi_dst = os.path.join(mount_efi, "EFI")
+        run_cmd(["sudo", "mkdir", "-p", efi_dst])
+        run_cmd(["sudo", "cp", "-r"] + [os.path.join(efi_src, i) for i in efi_items] + [efi_dst])
         _status("Copied EFI/ tree to EFI partition")
     else:
         _status("WARNING: No EFI directory found in ISO - drive may not be UEFI bootable")
 
+    # boot
     boot_src = _find_path_case_insensitive(iso_mount, "boot")
     if boot_src:
-        for item in os.listdir(boot_src):
-            src_path = os.path.join(boot_src, item)
-            dst_path = os.path.join(mount_efi, "boot", item)
-            if os.path.isdir(src_path):
-                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-            else:
-                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                shutil.copy2(src_path, dst_path)
+        boot_dst = os.path.join(mount_efi, "boot")
+        run_cmd(["sudo", "mkdir", "-p", boot_dst])
+        run_cmd(["sudo", "cp", "-r"] + [os.path.join(boot_src, i) for i in os.listdir(boot_src)] + [boot_dst])
         _status("Copied boot/ tree to EFI partition")
 
     for fname in ["bootmgr", "bootmgr.efi"]:
         src = _find_path_case_insensitive(iso_mount, fname)
         if src:
-            shutil.copy2(src, os.path.join(mount_efi, fname))
+            run_cmd(["sudo", "cp", src, f"{mount_efi}/{fname}"])
             _status(f"Copied {fname} to EFI partition root")
 
     _fix_efi_bootloader(mount_efi)
@@ -426,7 +408,7 @@ def flash_windows(device: str, iso: str, scheme: PartitionScheme, progress_cb=No
 
                 # Step 7: Sync
                 _status("Syncing all writes to disk...")
-                os.sync()
+                run_cmd(["sudo", "sync"])
                 _emit(97)
                 _status("Sync complete")
 
@@ -456,7 +438,11 @@ def flash_windows(device: str, iso: str, scheme: PartitionScheme, progress_cb=No
             subprocess.run(["sudo", "umount", iso_mount], capture_output=True)
 
 
-# ---new---
+class PartitionInfo(TypedDict):
+    role: str
+    path: str
+
+
 def mount_iso(iso_path: str) -> str | None:
     """This function mounts an iso file at /mnt/iso/ and returns the location if mount is successfull
 
@@ -548,8 +534,16 @@ def create_partitions(drive: str, scheme: PartitionScheme) -> list[PartitionInfo
 
 
 def _get_disk_size_sectors(drive: str) -> int:
-    result = subprocess.run(["sudo", "blockdev", "--getsz", drive], capture_output=True, text=True, check=True)
-    return int(result.stdout.strip())  # returns 512-byte sectors
+    """Return the size of *drive* in 512-byte sectors.
+
+    Reads ``/sys/class/block/<dev>/size`` so no external tool is required.
+    The kernel always expresses block-device size in 512-byte units here,
+    regardless of the device's physical or logical sector size.
+    """
+    dev_name = os.path.basename(drive)
+    sysfs_path = f"/sys/class/block/{dev_name}/size"
+    with open(sysfs_path) as fh:
+        return int(fh.read().strip())
 
 
 UEFI_NTFS_URL = "https://github.com/pbatard/rufus/raw/master/res/uefi/uefi-ntfs.img"
