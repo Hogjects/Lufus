@@ -1379,6 +1379,12 @@ class LufusWindow(QMainWindow):
         self.input_hash.setPlaceholderText(self._T.get("input_hash_placeholder", "Enter expected SHA256 hash here..."))
         self.input_label.setPlaceholderText(self._T.get("lbl_volume_label", "Volume Label"))
 
+        self.btn_icon1.setToolTip(self._T.get("tooltip_website", "website"))
+        self.btn_icon2.setToolTip(self._T.get("tooltip_about", "about"))
+        self.btn_icon3.setToolTip(self._T.get("tooltip_settings", "settings"))
+        self.btn_icon4.setToolTip(self._T.get("tooltip_log", "log"))
+        self.btn_refresh.setToolTip(self._T.get("tooltip_refresh", "refresh"))
+
         # update boot combo default text :3
         if self.combo_boot.itemText(0) == "installation_media.iso" or self.combo_boot.itemText(0) == self._T.get(
             "combo_boot_default", "installation_media.iso"
