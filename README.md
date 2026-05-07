@@ -11,7 +11,7 @@
 
 ## Beta Release Disclaimer
 
-**Lufus** is currently in **Beta**. 
+**Lufus** is currently in **Beta**! 
 
 Lufus is a physical drive imaging and formatting utility written in Python, inspired by **Rufus** on Windows, with the goal of delivering a greater experience for Linux users.
 While core functionality has been implemented, the project is still under active development. Users should expect bugs, incomplete features, and ongoing structural changes.
