@@ -15,9 +15,13 @@ from lufus.writing.windows.detect import is_linux_iso
 def test_is_linux_iso_detects_marker(monkeypatch):
     mock_run = MagicMock()
     mock_run.return_value = subprocess.CompletedProcess(
-        args=["7z", "l", "test.iso"], returncode=0, stdout="isolinux/isolinux.cfg\nvmlinuz\ninitrd.img", stderr=""
+        args=["7z", "l", "test.iso"],
+        returncode=0,
+        stdout="isolinux/isolinux.cfg\nisolinux/isolinux.bin",
+        stderr="",
     )
     monkeypatch.setattr(subprocess, "run", mock_run)
+    monkeypatch.setattr("lufus.writing.windows.detect._read_pvd_label", MagicMock(return_value=""))
     assert is_linux_iso("test.iso") is True
 
 
@@ -27,4 +31,5 @@ def test_is_linux_iso_fails_without_marker(monkeypatch):
         args=["7z", "l", "test.iso"], returncode=0, stdout="random/file/not/linux.txt", stderr=""
     )
     monkeypatch.setattr(subprocess, "run", mock_run)
+    monkeypatch.setattr("lufus.writing.windows.detect._read_pvd_label", MagicMock(return_value=""))
     assert is_linux_iso("test.iso") is False
