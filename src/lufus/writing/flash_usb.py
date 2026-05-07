@@ -51,8 +51,6 @@ def flash_usb(
     try:
         iso_size = os.path.getsize(iso_path)
         _status(f"File size: {iso_size:,} bytes ({iso_size / (1024**3):.2f} GiB)")
-        if progress_cb:
-            progress_cb(2)
 
         if iso_path.lower().endswith(".iso"):
             _status(f"Validating ISO9660 signature for: {iso_path}")
@@ -64,15 +62,8 @@ def flash_usb(
         else:
             _status(f"Not an ISO file ({os.path.basename(iso_path)}), skipping ISO signature check")
 
-        if progress_cb:
-            progress_cb(5)
-
         _status("Checking if image contains installation markers...")
-        iso_type = detect_iso_type(iso_path)
-        if progress_cb:
-            progress_cb(8)
-
-        if iso_type == IsoType.WINDOWS:
+        if is_windows_iso(iso_path):
             _status("Windows Installation media detected, routing to flash_windows (ISO mode)")
             return flash_windows(
                 device,
@@ -82,13 +73,11 @@ def flash_usb(
                 status_cb=status_cb,
             )
 
+        iso_type = detect_iso_type(iso_path)
         if iso_type == IsoType.LINUX:
             _status("Linux Installation media detected, will use dd for flashing")
         else:
             _status("Generic or unknown image, will use dd for flashing")
-
-        if progress_cb:
-            progress_cb(10)
 
         dd_args = [
             "dd",
@@ -104,11 +93,7 @@ def flash_usb(
         _status(f"Writing {iso_size:,} bytes to {shlex.quote(device)}, this may take several minutes...")
 
         try:
-            # Use LC_ALL=C to ensure "bytes" is the keyword for progress parsing
-            # and set a consistent output format across different locales.
-            env = os.environ.copy()
-            env["LC_ALL"] = "C"
-            process = subprocess.Popen(dd_args, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, env=env)
+            process = subprocess.Popen(dd_args, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
         except FileNotFoundError:
             log.error("Flash failed: 'dd' utility not found. Install coreutils.")
             _status("Flash failed: 'dd' utility not found. Install coreutils.")
@@ -119,22 +104,12 @@ def flash_usb(
         buf = b""
         last_pct = -1
         while True:
-            # Read in small chunks to handle \r progress updates from dd without blocking
-            # until a newline (\n) is received. status=progress usually emits \r.
-            try:
-                chunk = process.stderr.read(128)
-            except Exception as e:
-                log.warning("Error reading dd stderr: %s", e)
-                break
-
+            chunk = process.stderr.readline()
             if not chunk:
                 break
             buf += chunk
-            # Split by \r or \n to catch all progress updates
             parts = re.split(rb"[\r\n]", buf)
-            # The last part might be incomplete, keep it in the buffer
             buf = parts[-1]
-
             for line in parts[:-1]:
                 line = line.strip()
                 if not line:
@@ -142,20 +117,14 @@ def flash_usb(
                 m = re.match(rb"^(\d+)\s+bytes", line)
                 if m and iso_size > 0:
                     bytes_done = int(m.group(1))
-                    # Scale progress to 10-95% range to leave room for early steps and final sync
-                    pct_raw = min(int(bytes_done * 100 / iso_size), 100)
-                    pct = 10 + int(pct_raw * 0.85)
-
+                    pct = min(int(bytes_done * 100 / iso_size), 99)
                     if pct != last_pct:
-                        _status(f"dd progress: {bytes_done:,} / {iso_size:,} bytes ({pct_raw}%)")
+                        _status(f"dd progress: {bytes_done:,} / {iso_size:,} bytes ({pct}%)")
                         last_pct = pct
                     if progress_cb:
                         progress_cb(pct)
                 else:
-                    # Filter out common dd output lines to avoid logging noise
-                    line_str = line.decode("utf-8", errors="replace")
-                    if not any(x in line_str for x in ["records in", "records out", "copied"]):
-                        log.warning("dd stderr: %s", line_str)
+                    log.warning("dd stderr: %s", line.decode("utf-8", errors="replace"))
 
         process.wait()
         _status(f"dd process exited with return code {process.returncode}")
