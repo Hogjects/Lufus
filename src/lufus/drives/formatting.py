@@ -107,6 +107,7 @@ def remount(drive: str = None) -> bool:
     else:
         # Look up mount point for the specified drive
         from lufus.drives.find_usb import find_usb
+
         mount_dict = find_usb()
         mount = mount_dict.get(drive)
     if not drive:

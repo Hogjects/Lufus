@@ -149,6 +149,9 @@ class Testflash_usbNvmeDeviceStrip:
             def __iter__(self):
                 return iter([])
 
+            def read1(self, size=-1):
+                return b""
+
         monkeypatch.setattr(flash_usb_module.subprocess, "Popen", FakeProcess)
 
         flash_usb("/dev/nvme0n1p1", str(iso))
