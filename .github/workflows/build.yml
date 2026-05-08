@@ -34,11 +34,18 @@ jobs:
             libgl1 \
             libegl1 \
             libdbus-1-3 \
+            ruby-dev\
+            build-essential\
+            rpm\
             libxcb-cursor0
-      - name: Build AppImage
+      - name: Prepare Scripts
         run: |
-          chmod +x scripts/build-appimage.sh
-          bash scripts/build-appimage.sh
+            chmod +x appimage-setup.sh
+            chmod +x appimage-installer-config.sh
+      - name: Run Installer Config
+        run: ./appimage-installer-config.sh
+      - name: Build AppImage
+        run: bash appimage-setup.sh
 
       - name: Verify AppImage
         run: |
@@ -77,7 +84,7 @@ jobs:
 
         - name: Install dependencies
           run: |
-            pip install pyinstaller PyQt6 psutil pyudev packaging platformdirs
+            pip install pyinstaller PyQt6 psutil pyudev requests packaging platformdirs
 
         - name: Build with PyInstaller
           run: |
@@ -106,3 +113,47 @@ jobs:
               Lufus-x86_64-${{ github.ref_name }}.tar.gz
               Lufus-x86_64-${{ github.ref_name }}.tar.gz.sha256
             append_body: true
+
+  # for fpm packages
+  build-fpm:
+    needs: build-tarball
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: write
+    strategy:
+      matrix:
+        pkg_type: [deb, rpm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: actions/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install FPM
+        run: gem install fpm
+
+      - name: Download tarball from release
+        run: |
+          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Lufus-x86_64-${{ github.ref_name }}.tar.gz
+
+      - name: Build ${{ matrix.pkg_type }} Package
+        run: |
+          mkdir tmp_source && tar -xzf Lufus-x86_64-${{ github.ref_name }}.tar.gz -C tmp_source
+          fpm -s dir -t ${{ matrix.pkg_type }} \
+            -n "Lufus" \
+            -v "${{ github.ref_name }}" \
+            --iteration 1 \
+            --prefix /opt/lufus \
+            --description "Physical drive imaging and formatting utility" \
+            -C tmp_source/Lufus-x86_64-${{ github.ref_name }} .
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            *.deb
+            *.rpm
+          append_body: true
