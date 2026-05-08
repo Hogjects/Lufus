@@ -422,9 +422,9 @@ def test_dskformat_runs_expected_mkfs_command(monkeypatch, fs_type: int, expecte
     formatting.dskformat()
 
     # Find the mkfs call (partition scheme parted calls come first)
-    mkfs_calls = [c for c in calls if c and c[0].startswith("mkfs")]
+    mkfs_calls = [c for c in calls if c and Path(c[0]).name.startswith("mkfs")]
     assert len(mkfs_calls) == 1, f"Expected 1 mkfs call, got: {calls}"
-    assert mkfs_calls[0][0] == expected_tool
+    assert expected_tool in mkfs_calls[0][0]
 
 
 def test_dskformat_calls_unexpected_for_unknown_fs(monkeypatch) -> None:
