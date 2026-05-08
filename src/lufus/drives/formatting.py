@@ -407,6 +407,7 @@ def dskformat(status_cb=None) -> bool:
 
     else:
         _status(f"ERROR: Unknown fs_type={fs_type}")
+        unexpected()
         return False
 
     # Apply volume label after successful format

@@ -47,11 +47,11 @@ class TestFlashWindowsOsErrorOnMissingIso:
 
     def test_returns_false_when_iso_does_not_exist(self, tmp_path):
         missing_iso = str(tmp_path / "nonexistent.iso")
-        result = fw_module.flash_windows("/dev/sdb", missing_iso)
+        result = fw_module.flash_windows("/dev/sdb", missing_iso, fw_module.PartitionScheme.SIMPLE_FAT32)
         assert result is False
 
     def test_returns_false_when_iso_is_a_directory(self, tmp_path):
-        result = fw_module.flash_windows("/dev/sdb", str(tmp_path))
+        result = fw_module.flash_windows("/dev/sdb", str(tmp_path), fw_module.PartitionScheme.SIMPLE_FAT32)
         assert result is False
 
 class TestGetWimSizeCaseInsensitive:
