@@ -35,14 +35,10 @@ jobs:
             libegl1 \
             libdbus-1-3 \
             libxcb-cursor0
-      - name: Prepare Scripts
-        run: |
-            chmod +x scripts/appimage-setup.sh
-            chmod +x scripts/appimage-installer-config.sh
-      - name: Run Installer Config
-        run: ./scripts/appimage-installer-config.sh
       - name: Build AppImage
-        run: bash scripts/appimage-setup.sh
+        run: |
+          chmod +x scripts/build-appimage.sh
+          bash scripts/appimage-setup.sh
 
       - name: Verify AppImage
         run: |
