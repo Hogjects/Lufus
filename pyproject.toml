@@ -164,25 +164,6 @@ supported = false
 variant = "Alpha Testing 'FOV' Fork"
 commit_date = 2026-03-26
 is_test = true
-<<<<<<< HEAD
-=======
-[project]
-name = "lufus"
-# keep version synced with version in [tool.briefcase]
-version = "1.0.1b1"
-description = "Physical drive imaging and formatting utility written in Python"
-readme = "README.md"
-license = {text = "MIT"}
-requires-python = ">=3.13"
-dependencies = [
-    "psutil>=7.2",
-    "pyside6",
-    "pyudev>=0.24.4",
-    "requests",
-    "packaging",
-    "platformdirs>=4.2",
-]
->>>>>>> e668f6b010fc6bf72b2d1a934de4bec44c9c195a
 
 [tool.ruff]
 line-length = 120

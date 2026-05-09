@@ -368,6 +368,7 @@ def test_get_mount_and_drive_falls_back_to_find_dn(monkeypatch) -> None:
 # unmount / remount
 # ---------------------------------------------------------------------------
 
+
 def test_unmount_skips_subprocess_when_no_drive(monkeypatch, caplog) -> None:
     monkeypatch.setattr(formatting, "_get_mount_and_drive", lambda: (None, None, {}))
 
@@ -481,7 +482,8 @@ def test_remount_issues_mount_command(monkeypatch) -> None:
     monkeypatch.setattr(formatting.subprocess, "run", lambda cmd, *a, **kw: calls.append(cmd))
     formatting.remount()
     assert calls and calls[0][0] == "mount" and drive in calls[0] and mount in calls[0]
-    
+
+
 # I think these are Redundant so i commented them out for now
 
 # @pytest.mark.parametrize(
