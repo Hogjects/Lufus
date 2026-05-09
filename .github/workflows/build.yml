@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        format: [appimage, deb, rpm]
+        format: [appimage, system]
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
 
       - name: Build Package
         run: |
-          briefcase package linux ${{ matrix.format }} --no-docker --non-interactive
+          briefcase package linux ${{ matrix.format }} --no-docker --no-input
 
       - name: Generate Checksums
         run: |
