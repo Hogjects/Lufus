@@ -1,14 +1,14 @@
 import sys
 from pathlib import Path
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 from lufus.writing.partition_scheme import PartitionScheme
 
 
 class VerifyWorker(QThread):
     # worker thread for sha256 verification >:D
-    progress = pyqtSignal(str)
-    int_progress = pyqtSignal(int)
-    flash_done = pyqtSignal(bool)
+    progress = Signal(str)
+    int_progress = Signal(int)
+    flash_done = Signal(bool)
 
     def __init__(self, iso_path: str, expected_hash: str):
         super().__init__()
@@ -48,10 +48,10 @@ class VerifyWorker(QThread):
 
 class FlashWorker(QThread):
     # worker thread for usb flashing operation meow
-    progress = pyqtSignal(int)
-    status = pyqtSignal(str)
-    flash_done = pyqtSignal(bool)
-    request_tweaks = pyqtSignal()
+    progress = Signal(int)
+    status = Signal(str)
+    flash_done = Signal(bool)
+    request_tweaks = Signal()
 
     def __init__(self, options: dict, t: dict):
         super().__init__()

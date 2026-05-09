@@ -15,7 +15,7 @@ from packaging import version
 from platformdirs import user_config_dir
 from datetime import datetime
 from pathlib import Path
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
@@ -35,12 +35,12 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QScrollArea,
 )
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     Qt,
     QTimer,
     QPropertyAnimation,
 )
-from PyQt6.QtGui import QIcon
+from PySide6.QtGui import QIcon
 
 from lufus import state
 from lufus import state as states
@@ -74,7 +74,7 @@ class BackgroundWidget(QWidget):
     def set_background(self, image_path):
         # load and cache bg pixmap :3
         if image_path and Path(image_path).is_file():
-            from PyQt6.QtGui import QPixmap
+            from PySide6.QtGui import QPixmap
 
             self._bg_pixmap = QPixmap(str(image_path))
         else:
@@ -83,7 +83,7 @@ class BackgroundWidget(QWidget):
 
     def paintEvent(self, event):
         if self._bg_pixmap and not self._bg_pixmap.isNull():
-            from PyQt6.QtGui import QPainter
+            from PySide6.QtGui import QPainter
 
             painter = QPainter(self)
             # scale to fill widget keeping aspect ratio, centre-cropped :D

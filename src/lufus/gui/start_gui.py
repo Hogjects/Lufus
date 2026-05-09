@@ -24,8 +24,8 @@ def _load_initial_theme():
 
 
 def _show_root_warning() -> None:
-    from PyQt6.QtWidgets import QApplication, QMessageBox
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtCore import QTimer
     import sys
 
     app = QApplication(sys.argv)
@@ -62,8 +62,8 @@ def launch_gui_with_usb_data() -> None:
     usb_devices = find_usb()
     log.info("Launching GUI with USB devices: %s", usb_devices)
 
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QTimer
     from lufus.gui.gui import LufusWindow
 
     app = QApplication(sys.argv)
