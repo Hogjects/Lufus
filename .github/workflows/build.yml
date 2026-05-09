@@ -5,14 +5,20 @@ on:
     tags:
       - "v*"
       - "*-beta"
+      - "*-dev"
   workflow_dispatch:
 
 jobs:
-  # for appimage
-  build-appimage:
+  # Briefcase for AppImages, deb and rpm (replaces custom script and fpm)
+  build:
+    name: Build ${{ matrix.format }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [appimage, deb, rpm]
 
     steps:
       - uses: actions/checkout@v4
@@ -22,48 +28,43 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install system dependencies
+      - name: Install Briefcase
+        run: |
+          python -m pip install --upgrade pip
+          pip install briefcase
+
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            wget \
-            binutils \
-            fuse \
-            libfuse2 \
-            libglib2.0-0 \
-            libgl1 \
-            libegl1 \
-            libdbus-1-3 \
-            ruby-dev\
-            build-essential\
-            rpm\
-            libxcb-cursor0
-      - name: Build AppImage
-        run: |
-          chmod +x scripts/build-appimage.sh
-          bash scripts/build-appimage.sh
+            build-essential git python3-dev \
+            libfuse2 binutils \
+            debhelper devscripts \
+            rpm
 
-      - name: Verify AppImage
+      - name: Build Package
         run: |
-          ls -lh Lufus-x86_64.AppImage
-          file Lufus-x86_64.AppImage
-          chmod +x Lufus-x86_64.AppImage
+          briefcase package linux ${{ matrix.format }} --no-docker --non-interactive
 
-      - name: Generate checksums
+      - name: Generate Checksums
         run: |
-          sha256sum Lufus-x86_64.AppImage > Lufus-x86_64.AppImage.sha256
-          cat Lufus-x86_64.AppImage.sha256
+          cd dist
+          for file in *; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "$file.sha256"
+            fi
+          done
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            Lufus-x86_64.AppImage
-            Lufus-x86_64.AppImage.sha256
+            dist/*
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') }}
           generate_release_notes: true
+          append_body: true
   
   # for binary
   build-tarball:
@@ -80,7 +81,7 @@ jobs:
 
         - name: Install dependencies
           run: |
-            pip install pyinstaller PyQt6 psutil pyudev requests packaging platformdirs requests
+            pip install pyinstaller PyQt6 psutil pyudev requests packaging platformdirs
 
         - name: Build with PyInstaller
           run: |
@@ -90,7 +91,7 @@ jobs:
             --add-data "src/lufus/gui/assets:lufus/gui/assets" \
             --add-data "src/lufus/gui/languages:lufus/gui/languages" \
             --add-data "src/lufus/gui/themes:lufus/gui/themes" \
-            --collect-all PyQt6 \
+            --collect-all PySide6 \
             --name "Lufus-x86_64-${{ github.ref_name }}" \
             "src/lufus/__main__.py"
 
@@ -109,47 +110,4 @@ jobs:
               Lufus-x86_64-${{ github.ref_name }}.tar.gz
               Lufus-x86_64-${{ github.ref_name }}.tar.gz.sha256
             append_body: true
-
-  # for fpm packages
-  build-fpm:
-    needs: build-tarball
-    runs-on: ubuntu-latest
-    permissions: 
-      contents: write
-    strategy:
-      matrix:
-        pkg_type: [deb, rpm]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Ruby
-        uses: actions/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-
-      - name: Install FPM
-        run: gem install fpm
-
-      - name: Download tarball from release
-        run: |
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Lufus-x86_64-${{ github.ref_name }}.tar.gz
-
-      - name: Build ${{ matrix.pkg_type }} Package
-        run: |
-          mkdir tmp_source && tar -xzf Lufus-x86_64-${{ github.ref_name }}.tar.gz -C tmp_source
-          fpm -s dir -t ${{ matrix.pkg_type }} \
-            -n "Lufus" \
-            -v "${{ github.ref_name }}" \
-            --iteration 1 \
-            --prefix /opt/lufus \
-            --description "Physical drive imaging and formatting utility" \
-            -C tmp_source/Lufus-x86_64-${{ github.ref_name }} .
-
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: |
-            *.deb
-            *.rpm
-          append_body: true
+            
