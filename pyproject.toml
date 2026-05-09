@@ -47,6 +47,7 @@ sources = [
 test_sources = [
     "tests",
 ]
+icon = "src/lufus/gui/assets/icons/lufuslogo"
 requires = [
     "psutil>=7.2",
     "pyside6",
@@ -135,14 +136,18 @@ system_runtime_requires = [
 ]
 
 [tool.briefcase.app.lufus.linux.appimage]
-manylinux = "manylinux_2_28"
-system_requires = []  # AppImage needs this section present
+manylinux = "manylinux_2014"
+system_requires = ["libxcb-cursor0", "libgl1",]  # AppImage needs this section present
 linuxdeploy_plugins = []
 
 [tool.briefcase.app.lufus.linux.flatpak]
 flatpak_runtime = "org.kde.Platform"
 flatpak_runtime_version = "6.9"
 flatpak_sdk = "org.kde.Sdk"
+
+[tool.briefcase.app.lufus.linux.deb]
+
+[tool.briefcase.app.lufus.linux.rpm]
 
 # Unsupported platforms
 
