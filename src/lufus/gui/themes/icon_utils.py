@@ -1,7 +1,7 @@
 from pathlib import Path
-from PyQt6.QtCore import Qt, QByteArray
-from PyQt6.QtGui import QIcon, QPixmap, QPainter
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtCore import Qt, QByteArray
+from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
 
 def svg_icon(svg_path: Path | str, color: str, size: int = 24) -> QIcon:

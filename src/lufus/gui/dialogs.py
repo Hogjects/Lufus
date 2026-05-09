@@ -1,6 +1,6 @@
 from pathlib import Path
 from platformdirs import user_config_dir
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QCheckBox,
@@ -15,8 +15,8 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl
-from PyQt6.QtGui import QFont, QRegularExpressionValidator, QDesktopServices
+from PySide6.QtCore import Qt, Signal, QRegularExpression, QUrl
+from PySide6.QtGui import QFont, QRegularExpressionValidator, QDesktopServices
 import sys
 
 from lufus import state as states
@@ -189,8 +189,8 @@ class AboutWindow(QDialog):
 
 class SettingsDialog(QDialog):
     # signals for when settings change :D
-    language_changed = pyqtSignal(str)
-    theme_changed = pyqtSignal(str)
+    language_changed = Signal(str)
+    theme_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject, pyqtSignal, QSocketNotifier
+from PySide6.QtCore import QObject, Signal, QSocketNotifier
 import pyudev
 from lufus.lufus_logging import get_logger
 
@@ -6,9 +6,9 @@ log = get_logger(__name__)
 
 
 class UsbMonitor(QObject):
-    device_added = pyqtSignal(str)
-    device_removed = pyqtSignal(str)
-    device_list_updated = pyqtSignal(dict)
+    device_added = Signal(str)
+    device_removed = Signal(str)
+    device_list_updated = Signal(dict)
 
     def __init__(self):
         super().__init__()
@@ -67,7 +67,10 @@ class UsbMonitor(QObject):
 
         node = device.device_node
         if not node:
-            log.warning("UsbMonitor: ignoring event with no device_node (action=%s)", device.action)
+            log.warning(
+                "UsbMonitor: ignoring event with no device_node (action=%s)",
+                device.action,
+            )
             return
 
         action = device.action
@@ -93,7 +96,11 @@ class UsbMonitor(QObject):
         elif action == "remove":
             if node in self.devices:
                 removed_label = self.devices.pop(node)
-                log.info("UsbMonitor: device removed: %s (was labeled %r)", node, removed_label)
+                log.info(
+                    "UsbMonitor: device removed: %s (was labeled %r)",
+                    node,
+                    removed_label,
+                )
                 self.device_removed.emit(node)
                 changed = True
             else:
