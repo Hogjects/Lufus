@@ -8,6 +8,7 @@ version = "1.0.0"  # keep synced with [tool.briefcase] version
 description = "A rufus clone written in Python and designed to work with Linux."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "psutil>=7.2",
@@ -136,7 +137,7 @@ system_runtime_requires = [
 ]
 
 [tool.briefcase.app.lufus.linux.appimage]
-manylinux = "manylinux_2014"
+manylinux = "manylinux-2014"
 system_requires = ["libxcb-cursor0", "libgl1",]  # AppImage needs this section present
 linuxdeploy_plugins = []
 
