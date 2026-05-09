@@ -138,7 +138,7 @@ system_runtime_requires = [
 ]
 
 [tool.briefcase.app.lufus.linux.appimage]
-manylinux = "manylinux-2014"
+manylinux = "manylinux_2_28"
 system_requires = ["libxcb-cursor0", "libgl1",]  # AppImage needs this section present
 linuxdeploy_plugins = []
 
