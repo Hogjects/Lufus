@@ -39,9 +39,11 @@ jobs:
         if: matrix.container == ''
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git python3-dev libfuse2 binutils debhelper devscripts \
-          dosfstools ntfs-3g exfatprogs e2fsprogs udftools btrfs-progs xfsprogs libgl1 libqt6dbus6 libqt6gui6
-
+          sudo apt-get install -y \
+          build-essential git python3-dev libfuse2 binutils debhelper devscripts \
+          dosfstools ntfs-3g exfatprogs e2fsprogs udftools btrfs-progs xfsprogs \
+          libgl1 libqt6dbus6 libqt6gui6 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+          libxcb-shape0 libxkbcommon-x11-0
       # FEDORA SETUP 
       - name: Install Build Dependencies (Fedora)
         if: matrix.container != ''
