@@ -348,7 +348,7 @@ def disk_format(status_cb=None) -> bool:
 
     if fs_type not in fs_configs:
         _status(f"ERROR: Unknown fs_type={fs_type}")
-        unexpected()
+        log_unexpected_error()
         return False
 
     tool_name, args_fn, fs_label, install_hint = fs_configs[fs_type]
