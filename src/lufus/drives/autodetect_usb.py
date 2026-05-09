@@ -50,9 +50,7 @@ class UsbMonitor(QObject):
                     serial,
                 )
                 found += 1
-        log.info(
-            "UsbMonitor: initial scan complete, %d USB block device(s) found", found
-        )
+        log.info("UsbMonitor: initial scan complete, %d USB block device(s) found", found)
 
     def _on_socket_ready(self):
         while True:
@@ -106,9 +104,7 @@ class UsbMonitor(QObject):
                 self.device_removed.emit(node)
                 changed = True
             else:
-                log.warning(
-                    "UsbMonitor: remove event for unknown node %s, ignoring", node
-                )
+                log.warning("UsbMonitor: remove event for unknown node %s, ignoring", node)
 
         if changed:
             self.device_list_updated.emit(self.devices)
