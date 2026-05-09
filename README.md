@@ -49,5 +49,16 @@ or `mkdocs serve` to run a dev server.
 [Read the documentation here (WIP)](https://splayer.4plt.ch/lufus/)
 ## Contributing
 
+### Contribution Guidelines
+1. All PR must be made against the dev branch by default. Any exceptions must be properly stated
+2. Provide an example of your feature or screenshots of changes to the GUI wherever applicable 
+3. Any use of AI must be clearly stated on the PR
+4. PR must be properly made with the format, issues and labels
+5. Do not create multiple PRs or duplicate PRs at once
+6. Follow proper PEP8 naming scheme (experimental)
+7. Any known limitations must be clearly stated in the PR
+
+Your PR may be rejected by the maintainers for any of the reasons without prior notice. Please ping other maintainers if you think a mistake has been made. Guidelines are a subject to change.
+
 Feedback, testing, translations, and other contributions are appreciated. Please join our Discord server to get quick support on contributing and debugging.
 This is an open-source project maintained by volunteers and hobbyists. Response times for issues and pull requests may vary.
