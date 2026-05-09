@@ -98,13 +98,16 @@ jobs:
 
         - name: Build with PyInstaller
           run: |
-            pyinstaller --noconfirm --onedir --windowed \
+            pyinstaller --noconfirm --onefile --windowed \
             --icon "src/lufus/gui/assets/icons/lufuslogo.ico" \
             --paths "./src" \
             --add-data "src/lufus/gui/assets:lufus/gui/assets" \
             --add-data "src/lufus/gui/languages:lufus/gui/languages" \
             --add-data "src/lufus/gui/themes:lufus/gui/themes" \
-            --collect-all PySide6 \
+            --hidden-import "PySide6.QtCore" \
+            --hidden-import "PySide6.QtWidgets" \
+            --hidden-import "PySide6.QtGui" \
+            --collect-binaries PySide6 \
             --name "Lufus-x86_64-${{ github.ref_name }}" \
             "src/lufus/__main__.py"
 
