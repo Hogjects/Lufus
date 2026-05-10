@@ -22,13 +22,16 @@ jobs:
           - os: ubuntu-latest
             format: appimage
             args: "--no-docker"
+            artifact_name: "-appimage"
           - os: ubuntu-latest
             format: system
             args: ""
+            artifact_name: "-deb"
           - os: ubuntu-latest
             format: system
             args: ""
             container: fedora:40
+            artifact_name: "-rpm"
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +70,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-packages-${{ matrix.format }}-${{replace(matrix.container || 'ubuntu', ':', '-') }}
+          name: linux-packages-${{ matrix.artifact_name }}
           path: |
             dist/*.AppImage
             dist/*.deb
