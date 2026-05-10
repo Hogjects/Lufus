@@ -1,62 +1,52 @@
 import os
 import re
+import shlex
 import subprocess
+from lufus.utils import strip_partition_suffix
 from lufus.writing.check_file_sig import check_iso_signature
-from lufus.writing.detect_windows import is_windows_iso
-from lufus.writing.flash_windows import flash_windows
+from lufus.writing.windows.detect import detect_iso_type, IsoType, is_windows_iso
+from lufus.writing.windows.flash import flash_windows
 from lufus.lufus_logging import get_logger
 from lufus.writing.partition_scheme import PartitionScheme
 
 log = get_logger(__name__)
 
 
-def pkexecNotFound():
-    log.error("The command pkexec or labeling software was not found on your system.")
+# TODO: Decide if these are needed — currently never called in this module
+# def pkexec_not_found():
+#     log.error("The command pkexec or labeling software was not found on your system.")
+#
+# def format_fail():
+#     log.error("Formatting failed. Was the password correct? Is the drive unmounted?")
+#
+# def log_unexpected_error():
+#     log.error("An unexpected error occurred")
 
 
-def FormatFail():
-    log.error("Formatting failed. Was the password correct? Is the drive unmounted?")
-
-
-def unexpected():
-    log.error("An unexpected error occurred")
-
-
-def _strip_partition_suffix(device: str) -> str:
-    """Strip a partition number suffix to get the raw block device.
-
-    Handles NVMe (/dev/nvme0n1p1 -> /dev/nvme0n1), MMC
-    (/dev/mmcblk0p1 -> /dev/mmcblk0), and standard SCSI/SATA/USB
-    (/dev/sdb1 -> /dev/sdb). Returns the input unchanged if no
-    partition suffix is found.
-    """
-    # NVMe: /dev/nvmeXnYpZ -> /dev/nvmeXnY
-    m = re.match(r"^(/dev/nvme\d+n\d+)p\d+$", device)
-    if m:
-        return m.group(1)
-    # MMC/eMMC: /dev/mmcblkXpY -> /dev/mmcblkX
-    m = re.match(r"^(/dev/mmcblk\d+)p\d+$", device)
-    if m:
-        return m.group(1)
-    # Standard SCSI/SATA/USB: /dev/sdXN -> /dev/sdX
-    m = re.match(r"^(/dev/sd[a-z])\d+$", device)
-    if m:
-        return m.group(1)
-    return device
-
-
-def FlashUSB(iso_path: str, raw_device: str,scheme:PartitionScheme=PartitionScheme.SIMPLE_FAT32, progress_cb=None, status_cb=None) -> bool:
+def flash_usb(
+    device: str, iso_path: str, scheme: PartitionScheme = PartitionScheme.SIMPLE_FAT32, progress_cb=None, status_cb=None
+) -> bool:
     def _status(msg: str) -> None:
         log.info(msg)
         if status_cb:
             status_cb(msg)
 
-    _status(f"FlashUSB called: iso={iso_path}, device={raw_device}")
+    _status(f"flash_usb called: iso={iso_path}, device={device}")
 
-    original_device = raw_device
-    raw_device = _strip_partition_suffix(raw_device)
-    if raw_device != original_device:
-        _status(f"Stripped partition suffix: {original_device} -> {raw_device}")
+    # Strip any partition suffix first (e.g. /dev/nvme0n1p1 -> /dev/nvme0n1,
+    # /dev/sdb1 -> /dev/sdb) so that validation operates on the whole-disk path.
+    original_device = device
+    device = strip_partition_suffix(device)
+    if device != original_device:
+        _status(f"Stripped partition suffix: {original_device} -> {device}")
+
+    # Validate the (already-stripped) device path before any operation —
+    # prevents accidental writes to system disks if a bad options file or
+    # UI bug passes a wrong path.
+    if not re.match(r"^/dev/(sd[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+)$", device):
+        log.error("flash_usb: invalid device path %r — aborting", device)
+        _status(f"Flash aborted: invalid device path {device!r}")
+        return False
 
     try:
         iso_size = os.path.getsize(iso_path)
@@ -74,21 +64,25 @@ def FlashUSB(iso_path: str, raw_device: str,scheme:PartitionScheme=PartitionSche
 
         _status("Checking if image contains installation markers...")
         if is_windows_iso(iso_path):
-            _status("OS Installation media detected, routing to flash_windows (ISO mode)")
+            _status("Windows Installation media detected, routing to flash_windows (ISO mode)")
             return flash_windows(
-                raw_device,
+                device,
                 iso_path,
                 scheme,
                 progress_cb=progress_cb,
                 status_cb=status_cb,
             )
+
+        iso_type = detect_iso_type(iso_path)
+        if iso_type == IsoType.LINUX:
+            _status("Linux Installation media detected, will use dd for flashing")
         else:
-            _status("Not a Windows ISO, will use dd for flashing")
+            _status("Generic or unknown image, will use dd for flashing")
 
         dd_args = [
             "dd",
             f"if={iso_path}",
-            f"of={raw_device}",
+            f"of={device}",
             "bs=4M",
             "status=progress",
             "conv=fsync",
@@ -96,14 +90,10 @@ def FlashUSB(iso_path: str, raw_device: str,scheme:PartitionScheme=PartitionSche
         ]
 
         _status(f"Spawning dd: {' '.join(dd_args)}")
-        _status(
-            f"Writing {iso_size:,} bytes to {raw_device}, this may take several minutes..."
-        )
+        _status(f"Writing {iso_size:,} bytes to {shlex.quote(device)}, this may take several minutes...")
 
         try:
-            process = subprocess.Popen(
-                dd_args, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL
-            )
+            process = subprocess.Popen(dd_args, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
         except FileNotFoundError:
             log.error("Flash failed: 'dd' utility not found. Install coreutils.")
             _status("Flash failed: 'dd' utility not found. Install coreutils.")
@@ -129,9 +119,7 @@ def FlashUSB(iso_path: str, raw_device: str,scheme:PartitionScheme=PartitionSche
                     bytes_done = int(m.group(1))
                     pct = min(int(bytes_done * 100 / iso_size), 99)
                     if pct != last_pct:
-                        _status(
-                            f"dd progress: {bytes_done:,} / {iso_size:,} bytes ({pct}%)"
-                        )
+                        _status(f"dd progress: {bytes_done:,} / {iso_size:,} bytes ({pct}%)")
                         last_pct = pct
                     if progress_cb:
                         progress_cb(pct)
@@ -144,7 +132,7 @@ def FlashUSB(iso_path: str, raw_device: str,scheme:PartitionScheme=PartitionSche
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, dd_args)
 
-        _status(f"dd completed successfully: {iso_path} -> {raw_device}")
+        _status(f"dd completed successfully: {iso_path} -> {device}")
         return True
 
     except OSError as e:
@@ -154,9 +142,8 @@ def FlashUSB(iso_path: str, raw_device: str,scheme:PartitionScheme=PartitionSche
     except subprocess.CalledProcessError as e:
         log.error(
             "Flash failed with CalledProcessError: returncode=%d, cmd=%s",
-            e.returncode, e.cmd,
+            e.returncode,
+            e.cmd,
         )
-        _status(
-            f"Flash failed with CalledProcessError: returncode={e.returncode}, cmd={e.cmd}"
-        )
+        _status(f"Flash failed with CalledProcessError: returncode={e.returncode}, cmd={e.cmd}")
         return False

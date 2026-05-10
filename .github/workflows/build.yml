@@ -1,19 +1,88 @@
-name: Build & Release AppImage
+name: Build & Release Packages
 
 on:
   push:
     tags:
       - "v*"
       - "*-beta"
+      - "*-dev"
   workflow_dispatch:
 
 jobs:
-  # for appimage
-  build-appimage:
+  build:
+    name: Build ${{ matrix.format }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            format: appimage
+            args: "--no-docker"
+            artifact_name: "-appimage"
+          - os: ubuntu-latest
+            format: system
+            args: ""
+            artifact_name: "-deb"
+          - os: ubuntu-latest
+            format: system
+            args: ""
+            container: fedora:40
+            artifact_name: "-rpm"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Build Dependencies (Ubuntu)
+        if: matrix.container == ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+          build-essential git python3-dev libfuse2 binutils debhelper devscripts \
+          dosfstools ntfs-3g exfatprogs e2fsprogs udftools btrfs-progs xfsprogs \
+          libgl1 libqt6dbus6 libqt6gui6 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+          libxcb-shape0 libxkbcommon-x11-0
+
+      - name: Install Build Dependencies (Fedora)
+        if: matrix.container != ''
+        run: |
+          dnf install -y python3-pip python3-devel gcc git rpm-build mesa-libGL libxcb \
+          btrfs-progs dosfstools e2fsprogs exfatprogs hfsplus-tools ntfs-3g qt6-qtbase-gui udftools xfsprogs
+          
+      - name: Set up Python (AppImage only)
+        if: matrix.format == 'appimage'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Briefcase
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install briefcase --ignore-installed
+
+      - name: Build Package
+        run: |
+          briefcase package linux ${{ matrix.format }} ${{ matrix.args }} --no-input
+
+      - name: Release Packages
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+          tag_name: ${{ github.ref_name }}
+          append_body: true
+          generate_release_notes: true
+
+  build-tarball:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -22,138 +91,59 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            wget \
-            binutils \
-            fuse \
-            libfuse2 \
-            libglib2.0-0 \
-            libgl1 \
-            libegl1 \
-            libdbus-1-3 \
-            ruby-dev\
-            build-essential\
-            rpm\
-            libxcb-cursor0
-      - name: Prepare Scripts
-        run: |
-            chmod +x appimage-setup.sh
-            chmod +x appimage-installer-config.sh
-      - name: Run Installer Config
-        run: ./appimage-installer-config.sh
-      - name: Build AppImage
-        run: bash appimage-setup.sh
+          pip install pyinstaller PySide6 psutil pyudev requests packaging platformdirs
 
-      - name: Verify AppImage
+      - name: Build with PyInstaller
         run: |
-          ls -lh Lufus-x86_64.AppImage
-          file Lufus-x86_64.AppImage
-          chmod +x Lufus-x86_64.AppImage
+          pyinstaller --noconfirm --onefile --windowed \
+          --icon "src/lufus/gui/assets/icons/lufuslogo.ico" \
+          --paths "./src" \
+          --add-data "src/lufus/gui/assets:lufus/gui/assets" \
+          --add-data "src/lufus/gui/languages:lufus/gui/languages" \
+          --add-data "src/lufus/gui/themes:lufus/gui/themes" \
+          --hidden-import "PySide6.QtCore" \
+          --hidden-import "PySide6.QtWidgets" \
+          --hidden-import "PySide6.QtGui" \
+          --collect-binaries PySide6 \
+          --name "Lufus-x86_64-${{ github.ref_name }}" \
+          "src/lufus/__main__.py"
 
-      - name: Generate checksums
+      - name: Create Tarball and Checksum
         run: |
-          sha256sum Lufus-x86_64.AppImage > Lufus-x86_64.AppImage.sha256
-          cat Lufus-x86_64.AppImage.sha256
+          cd dist
+          tar -cvzf ../Lufus-x86_64-${{ github.ref_name }}.tar.gz Lufus-x86_64-${{ github.ref_name }}
+          cd ..
+          sha256sum Lufus-x86_64-${{ github.ref_name }}.tar.gz > Lufus-x86_64-${{ github.ref_name }}.tar.gz.sha256
 
-      - name: Create Release
+      - name: Release Tarball
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: ${{ github.ref_name }}
           files: |
-            Lufus-x86_64.AppImage
-            Lufus-x86_64.AppImage.sha256
-          draft: false
-          prerelease: ${{ contains(github.ref, '-beta') }}
-          generate_release_notes: true
-  
-  # for binary
-  build-tarball:
-      runs-on: ubuntu-latest
-      permissions:
-        contents: write
-      steps:
-        - uses: actions/checkout@v4
-
-        - name: Set up Python
-          uses: actions/setup-python@v5
-          with:
-            python-version: "3.13"
-
-        - name: Install dependencies
-          run: |
-            pip install pyinstaller PyQt6 psutil pyudev requests packaging platformdirs
-
-        - name: Build with PyInstaller
-          run: |
-            pyinstaller --noconfirm --onedir --windowed \
-            --icon "src/lufus/gui/assets/icons/lufuslogo.ico" \
-            --paths "./src" \
-            --add-data "src/lufus/gui/assets:lufus/gui/assets" \
-            --add-data "src/lufus/gui/languages:lufus/gui/languages" \
-            --add-data "src/lufus/gui/themes:lufus/gui/themes" \
-            --collect-all PyQt6 \
-            --name "Lufus-x86_64-${{ github.ref_name }}" \
-            "src/lufus/__main__.py"
-
-        - name: Create Tarball and Checksum
-          run: |
-            cd dist
-            tar -cvzf ../Lufus-x86_64-${{ github.ref_name }}.tar.gz Lufus-x86_64-${{ github.ref_name }}
-            cd ..
-            sha256sum Lufus-x86_64-${{ github.ref_name }}.tar.gz > Lufus-x86_64-${{ github.ref_name }}.tar.gz.sha256
-
-        - name: Upload to Release
-          uses: softprops/action-gh-release@v2
-          with:
-            tag_name: ${{ github.ref_name }}
-            files: |
-              Lufus-x86_64-${{ github.ref_name }}.tar.gz
-              Lufus-x86_64-${{ github.ref_name }}.tar.gz.sha256
-            append_body: true
-
-  # for fpm packages
-  build-fpm:
-    needs: build-tarball
-    runs-on: ubuntu-latest
-    permissions: 
-      contents: write
-    strategy:
-      matrix:
-        pkg_type: [deb, rpm]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Ruby
-        uses: actions/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-
-      - name: Install FPM
-        run: gem install fpm
-
-      - name: Download tarball from release
-        run: |
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Lufus-x86_64-${{ github.ref_name }}.tar.gz
-
-      - name: Build ${{ matrix.pkg_type }} Package
-        run: |
-          mkdir tmp_source && tar -xzf Lufus-x86_64-${{ github.ref_name }}.tar.gz -C tmp_source
-          fpm -s dir -t ${{ matrix.pkg_type }} \
-            -n "Lufus" \
-            -v "${{ github.ref_name }}" \
-            --iteration 1 \
-            --prefix /opt/lufus \
-            --description "Physical drive imaging and formatting utility" \
-            -C tmp_source/Lufus-x86_64-${{ github.ref_name }} .
-
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
+            Lufus-*.tar.gz
+            Lufus-*.sha256
           tag_name: ${{ github.ref_name }}
-          files: |
-            *.deb
-            *.rpm
           append_body: true
+          generate_release_notes: true
+
+  # release:
+  #   name: Create Release
+  #   needs: [build, build-tarball]
+  #   runs-on: ubuntu-latest
+  #   if: startsWith(github.ref, 'refs/tags/')
+  #   permissions:
+  #     contents: write
+  #   steps:
+      # - name: Download all artifacts
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     path: release-assets
+      #     merge-multiple: true
+
+      # - name: Upload to Release
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: release-assets/*
+      #     generate_release_notes: true

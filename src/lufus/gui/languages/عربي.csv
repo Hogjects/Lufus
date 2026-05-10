@@ -87,10 +87,9 @@ msgbox_scan_error_title,حدث خطأ أثناء الفحص
 msgbox_scan_error_body,:فشل الفحص بحثاً عن أجهزة الـ USB
 no_usb_found,لم يتم العثور علي أجهزة الـ USB
 dlg_select_image_title,اختار ملف الصورة
-dlg_select_image_filter,"Disk Images (*.iso *.dmg *.img *.bin *.raw);;كل الملفات (*)"
+dlg_select_image_filter,Disk Images (*.iso *.dmg *.img *.bin *.raw);;كل الملفات (*)
 about_content,"لوفس (lufus) هو برنامج مصنوع بلغة بايثون لنظام تشغيل لينيكس.
 مستوحى من برنامج روفس (rufus) الأصلي لنظام تشغيل ويندوز.
-الإصدار: 1.0.0b1
 GitHub: github.com/hog185/lufus"
 about_subtitle,أداة USB Flash
 btn_close,إغلاق
@@ -103,8 +102,37 @@ combo_badblocks_2pass,دورتان
 combo_badblocks_3pass,ثلاث دورات
 status_unmounting_all,جارٍ فصل جميع الأقسام على {device}...
 status_unmounting,جارٍ فصل {part}...
+status_remounting,إعادة تحميل {part}...
 status_format_starting,جارٍ بدء عملية المحي...
 status_format_in_progress,جارٍ محو وتهيئة القرص...
 status_format_complete,!اكتملت عملية المحي
 status_format_failed,فشلت عملية المحي. راجع السجل أعلاه للاطلاع على الخطأ بالتفصيل.
 status_flash_error,خطأ في الحرق: {error}
+acc_device,محدد الجهاز
+acc_device_desc,اختر جهاز USB الذي تريد استخدامه
+acc_refresh,تحديث الأجهزة
+acc_refresh_desc,البحث عن أجهزة USB المتصلة
+acc_boot,محدد صورة الإقلاع
+acc_boot_desc,يعرض ملف الصورة المحدد حاليًا
+acc_select,تصفح للبحث عن ملف الصورة
+acc_image_option,محدد خيار الصورة
+acc_image_option_desc,اختر نوع الصورة للكتابة: ويندوز، لينكس، آخر، أو تنسيق فقط
+acc_volume_label,إدخال تسمية وحدة التخزين
+acc_volume_label_desc,أدخل اسمًا لوحدة تخزين USB
+acc_filesystem,محدد نظام الملفات
+acc_cluster,محدد حجم العنقود
+acc_flash_option,محدد طريقة الكتابة
+acc_quick_format,خانة اختيار التنسيق السريع
+acc_extended_label,خانة اختيار إنشاء تسمية موسعة
+acc_bad_blocks,خانة اختيار فحص القطاعات التالفة
+acc_bad_blocks_passes,محدد عدد مرات فحص القطاعات التالفة
+acc_verify_hash,خانة اختيار التحقق من بصمة SHA256
+acc_hash_input,إدخال بصمة SHA256 المتوقعة
+acc_hash_input_desc,الصق بصمة SHA256 المتوقعة المكونة من 64 حرفًا هنا
+acc_progress,شريط تقدم العملية
+acc_start,بدء العملية
+acc_cancel,إلغاء العملية
+acc_website,فتح موقع Lufus
+acc_about,عن Lufus
+acc_settings,فتح الإعدادات
+acc_log,فتح نافذة السجل

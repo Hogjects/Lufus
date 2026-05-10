@@ -3,8 +3,8 @@ window_title,lufus
 log_window_title,Journal de lufus
 about_window_title,À propos
 settings_window_title,Paramètres
-btn_copy_log,Copier dans le presse-papier
-btn_save_log,Enregistrer le journal...
+btn_copy_log,Copier
+btn_save_log,Enregistrer...
 dlg_save_log_title,Enregistrer le journal
 save_failed_title,Échec de l'enregistrement
 save_failed_body,Impossible d'enregistrer le journal :
@@ -20,7 +20,7 @@ lbl_partition_scheme,Schéma de partition
 lbl_target_system,Système de destination
 lbl_volume_label,Nom du volume
 lbl_file_system,Système de fichiers
-lbl_flash_option,Option de flash
+lbl_flash_option,Option d'écriture
 lbl_cluster_size,Taille d'unité d'allocation
 combo_image_windows,Installation standard de Windows
 combo_image_linux,Installation standard de Linux
@@ -59,7 +59,7 @@ tooltip_log,Journal
 status_ready,Prêt
 status_scanning,Recherche de périphériques USB...
 status_scan_failed,Échec de la recherche
-status_flashing,Flashage en cours...
+status_flashing,Écriture en cours...
 progress_preparing,Préparation...
 progress_complete,Terminé ! 100%
 progress_failed,Échec
@@ -71,9 +71,9 @@ progress_mount_done,Montage terminé.. Terminé ! 100%
 msgbox_cancel_title,Annuler
 msgbox_cancel_body,Êtes-vous sûr de vouloir annuler ?
 msgbox_success_title,Succès
-msgbox_success_body,Le lecteur USB a été flashé avec succès !
+msgbox_success_body,Le lecteur USB a été écrit avec succès !
 msgbox_error_title,Erreur
-msgbox_error_body,Échec du flashage du lecteur USB.
+msgbox_error_body,Échec de l'écriture sur le lecteur USB.
 msgbox_no_image_title,Pas d'image
 msgbox_no_image_body,Veuillez d'abord sélectionner un fichier d'installation valide.
 msgbox_no_device_title,Pas de périphérique
@@ -87,15 +87,14 @@ msgbox_scan_error_title,Erreur de recherche
 msgbox_scan_error_body,Échec de la recherche de périphériques USB :
 no_usb_found,Aucun périphérique USB trouvé
 dlg_select_image_title,Sélectionner l'image disque
-dlg_select_image_filter,"Images disque (*.iso *.dmg *.img *.bin *.raw);;Tous les fichiers (*)"
-about_content,"Lufus est un programme d'écriture d'images disque écrit en Python pour Linux.
-Inspiré par l'outil original Rufus pour Windows.
-Version : v1.0.0b1
-GitHub : github.com/hog185/lufus"
-about_subtitle,Outil de flash USB
+dlg_select_image_filter,Images disque (*.iso *.dmg *.img *.bin *.raw);;Tous les fichiers (*)
+about_content,"Lufus est un logiciel libre d'écriture d'images disque écrit en Python pour GNU/Linux, 
+inspiré par l'outil original Rufus, disponible uniquement pour Windows.
+GitHub : https://github.com/Hog185/Lufus/"
+about_subtitle,Outil d'écriture USB
 btn_close,Fermer
 btn_ok,OK
-combo_boot_default,média_d_installation.iso
+combo_boot_default,media_d_installation.iso
 tooltip_website,Site web
 settings_label_theme,Thème
 input_hash_placeholder,Saisissez le hachage SHA256 attendu ici...
@@ -103,36 +102,37 @@ combo_badblocks_2pass,2 Passes
 combo_badblocks_3pass,3 Passes
 status_unmounting_all,Démontage de toutes les partitions sur {device}...
 status_unmounting,Démontage de {part}...
+status_remounting,Remontage de {part}...
 status_format_starting,Démarrage de l'opération de formatage...
 status_format_in_progress,Formatage du lecteur...
 status_format_complete,Formatage terminé !
 status_format_failed,Formatage ÉCHOUÉ. Consultez le journal ci-dessus pour l'erreur exacte.
 status_flash_error,Erreur lors de l'écriture : {error}
 acc_device,Sélection de l'appareil
-acc_device_desc,Sélectionnez l'appareil que vous voulez utiliser
-acc_refresh,Rafraîchir les appareils
-acc_refresh_desc,Cherche des nouveaux appareils USB
-acc_boot,Sélection de l'image de démarrage
-acc_boot_desc,Montre l'image actuellement sélectionnée
-acc_select,Chercher une image
-acc_image_option,Options de l'image
-acc_image_option_desc,Choisissez le type d'image à écrire : Windows, Linux, Autre, ou formatage
-acc_volume_label,Nom du volume
-acc_volume_label_desc,Donnez un nom au volume USB
-acc_filesystem,Sélection du système de fichier
-acc_cluster,Cluster size selector
-acc_flash_option,Sélection de la méthode d'écriture
-acc_quick_format,Formattage rapide
-acc_extended_label,Create extended label checkbox
-acc_bad_blocks,Vérifier la présence de mauvais segments
-acc_bad_blocks_passes,Bad block check passes selector
-acc_verify_hash,Vérifier le hachage SHA256
-acc_hash_input,Hachage SHA256 attendu
-acc_hash_input_desc,Collez le hachage SHA256 à 64 caractères attendu ici
-acc_progress,Barre de progression
-acc_start,Commencer
-acc_cancel,Annuler
-acc_website,Accéder au site de Lufus
+acc_device_desc,Sélectionnez l'appareil USB que vous souhaitez utiliser
+acc_refresh,Actualiser les appareils
+acc_refresh_desc,Rechercher les appareils USB connectés
+acc_boot,Sélecteur d'image de démarrage
+acc_boot_desc,Affiche le fichier image actuellement sélectionné
+acc_select,Parcourir pour trouver un fichier image
+acc_image_option,Sélecteur d'option d'image
+acc_image_option_desc,Choisissez le type d'image à écrire : Windows
+acc_volume_label,Champ de saisie du nom du volume
+acc_volume_label_desc,Entrez un nom pour le volume USB
+acc_filesystem,Sélecteur de système de fichiers
+acc_cluster,Sélecteur de taille de cluster
+acc_flash_option,Sélecteur de méthode d'écriture
+acc_quick_format,Case à cocher pour le formatage rapide
+acc_extended_label,Case à cocher pour créer une étiquette étendue
+acc_bad_blocks,Case à cocher pour vérifier les secteurs défectueux
+acc_bad_blocks_passes,Sélecteur du nombre de passes pour la vérification des blocs
+acc_verify_hash,Case à cocher pour vérifier la somme de contrôle SHA256
+acc_hash_input,Champ de saisie du hachage SHA256 attendu
+acc_hash_input_desc,Collez ici le hachage SHA256 attendu de 64 caractères
+acc_progress,Barre de progression de l'opération
+acc_start,Démarrer l'opération
+acc_cancel,Annuler l'opération
+acc_website,Ouvrir le site web de Lufus
 acc_about,À propos de Lufus
-acc_settings,Ouvrir les préférences
-acc_log,Ouvrir le journal
+acc_settings,Ouvrir les paramètres
+acc_log,Ouvrir la fenêtre du journal

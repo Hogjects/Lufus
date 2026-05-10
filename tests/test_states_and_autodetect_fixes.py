@@ -8,12 +8,13 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from lufus.drives import states
+from lufus import state
 
 
 def _make_monitor():
     """Return a UsbMonitor-like object without importing PyQt6/pyudev."""
     import types
+
     mon = types.SimpleNamespace(
         devices={},
         device_added=MagicMock(),
@@ -49,47 +50,60 @@ def _make_monitor():
     return mon
 
 
-def _device(devtype="disk", bus="usb", node="/dev/sdb", action="add",
-            label="MY_USB", model="MyDrive"):
+def _device(devtype="disk", bus="usb", node="/dev/sdb", action="add", label="MY_USB", model="MyDrive"):
     d = MagicMock()
     d.device_node = node
     d.action = action
+
     def _get(key):
-        return {"DEVTYPE": devtype, "ID_BUS": bus, "ID_FS_LABEL": label,
-                "ID_MODEL": model, "ID_VENDOR": "Acme"}.get(key)
+        return {"DEVTYPE": devtype, "ID_BUS": bus, "ID_FS_LABEL": label, "ID_MODEL": model, "ID_VENDOR": "Acme"}.get(
+            key
+        )
+
     d.get = _get
     return d
 
 
 class TestStatesTypeAnnotations:
     """All state variables must carry type annotations so static analysis
-    catches misassignments (e.g. states.DN = None instead of "").
+    catches misassignments (e.g. state.device_node = None instead of "").
     """
 
     def test_all_int_fields_annotated(self):
         import inspect
-        src = inspect.getsource(states)
-        for name in ("currentFS", "image_option", "partition_scheme",
-                     "target_system", "cluster_size", "QF",
-                     "create_extended", "check_bad", "currentflash"):
+
+        src = inspect.getsource(type(state))
+        for name in (
+            "filesystem_index",
+            "image_option",
+            "partition_scheme",
+            "target_system",
+            "cluster_size",
+            "quick_format",
+            "create_extended",
+            "check_bad",
+            "flash_mode",
+        ):
             assert f"{name}: int" in src, f"{name} missing int annotation"
 
     def test_all_str_fields_annotated(self):
         import inspect
-        src = inspect.getsource(states)
-        for name in ("new_label", "iso_path", "DN", "language", "expected_hash"):
+
+        src = inspect.getsource(type(state))
+        for name in ("new_label", "iso_path", "device_node", "language", "expected_hash"):
             assert f"{name}: str" in src, f"{name} missing str annotation"
 
     def test_bool_fields_annotated(self):
         import inspect
-        src = inspect.getsource(states)
+
+        src = inspect.getsource(type(state))
         assert "verify_hash: bool" in src
 
     def test_default_values_correct_types(self):
-        assert isinstance(states.currentFS, int)
-        assert isinstance(states.DN, str)
-        assert isinstance(states.verify_hash, bool)
-        assert isinstance(states.new_label, str)
+        assert isinstance(state.filesystem_index, int)
+        assert isinstance(state.device_node, str)
+        assert isinstance(state.verify_hash, bool)
+        assert isinstance(state.new_label, str)
 
 
 class TestStatesNewLabelLength:
@@ -98,13 +112,12 @@ class TestStatesNewLabelLength:
     """
 
     def test_default_new_label_fits_fat32(self):
-        assert len(states.new_label) <= 11, (
-            f"new_label default {states.new_label!r} is {len(states.new_label)} chars; "
-            f"FAT32 limit is 11"
+        assert len(state.new_label) <= 11, (
+            f"new_label default {state.new_label!r} is {len(state.new_label)} chars; FAT32 limit is 11"
         )
 
     def test_default_new_label_is_not_old_value(self):
-        assert states.new_label != "Volume Label", (
+        assert state.new_label != "Volume Label", (
             "Default new_label is still 'Volume Label' (12 chars, exceeds FAT32 limit)"
         )
 

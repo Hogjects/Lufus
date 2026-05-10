@@ -3,10 +3,18 @@ set -euo pipefail
 
 ls -la
 
-if [[ -f "appimage-installer-config.sh" ]]; then
-    echo "File is detected, we will proceed to install..."
-    source appimage-installer-config.sh >> appimage-setup.log 
-fi
+# Install system dependencies
+## COMMENTED BECAUSE ALREADY HANDELED IN YAML
+# echo "------------ Installing system libraries ------------"
+# apt-get update && apt-get upgrade -y
+# INSTALLER="apt-get install -y"
+# if [[ -f requirements-system.txt ]]; then
+#     $INSTALLER $(cat requirements-system.txt) >> appimage-setup.log
+#     echo "System libraries installed."
+# else
+#     echo "requirements-system.txt not found!"
+#     exit 1
+# fi
 
 if command -v python3 &>/dev/null; then
     PYTHON=python3
@@ -51,7 +59,7 @@ $PYTHON -m PyInstaller src/lufus/__main__.py \
     --hidden-import PyQt6.QtSvg \
     --collect-all psutil \
     --hidden-import lufus.drives.autodetect_usb \
-    --hidden-import lufus.drives.states \
+    --hidden-import lufus.state \
     --add-data "src/lufus/gui:lufus/gui" \
     --noconfirm
 

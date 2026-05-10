@@ -28,12 +28,12 @@
     },
 
     "fonts": {
-    "family": "Comic Neue, Comic Sans MS, cursive",
-    "base": 15,
-    "small": 12,
-    "header": 28,
-    "tool": 14,
-    "label": 15
+        "family": "Comic Neue, Comic Sans MS, cursive",
+        "base": 15,
+        "small": 12,
+        "header": 28,
+        "tool": 14,
+        "label": 15
     },
 
     "dimensions": {

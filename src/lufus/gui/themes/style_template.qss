@@ -4,7 +4,6 @@
 
 QMainWindow {{
     background-color: {colors_bg};
-    font-family: 'Segoe UI', Tahoma, sans-serif;
     font-family: {fonts_family};
     font-size: {fonts_base}pt;
     color: {colors_fg};
@@ -14,7 +13,9 @@ QLabel {{
     color: {colors_fg};
     font-family: {fonts_family};
     font-size: {fonts_label}pt;
-    padding: {dimensions_label_padding}px;
+    background: transparent;
+    padding: 0;
+    margin: 0;
 }}
 
 QLabel#sectionHeader {{
@@ -22,7 +23,9 @@ QLabel#sectionHeader {{
     font-size: {fonts_header}pt;
     font-weight: normal;
     color: {colors_fg};
-    padding: {dimensions_section_padding_vertical}px 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
 }}
 
 QComboBox, QLineEdit {{
@@ -49,6 +52,18 @@ QComboBox::drop-down {{
     border-left: 1px solid {colors_border_light};
     border-top-right-radius: {dimensions_combo_radius}px;
     border-bottom-right-radius: {dimensions_combo_radius}px;
+}}
+
+QComboBox::down-arrow {{
+    image: url({meta_arrow_down});
+    width: {dimensions_arrow_size}px;
+    height: {dimensions_arrow_size}px;
+}}
+
+QComboBox::up-arrow {{
+    image: url({meta_arrow_up});
+    width: {dimensions_arrow_size}px;
+    height: {dimensions_arrow_size}px;
 }}
 
 QComboBox QAbstractItemView {{
@@ -182,6 +197,9 @@ QCheckBox {{
     font-family: {fonts_family};
     font-size: {fonts_small}pt;
     color: {colors_fg};
+    background: transparent;
+    padding: 0;
+    margin: 0;
 }}
 
 QCheckBox::indicator {{

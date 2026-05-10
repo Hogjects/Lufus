@@ -1,7 +1,6 @@
 pyinstaller
-pyqt6
+pyside6
 psutil
 pyudev
-requests
 packaging
 platformdirs

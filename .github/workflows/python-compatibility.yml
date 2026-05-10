@@ -1,19 +1,20 @@
-name: CI
+name: Python Compatibility
 
 on:
   push:
     branches: ["**"]
   pull_request:
     branches: ["**"]
+  workflow_dispatch:
 
 jobs:
   test:
     name: "Test — Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        python-version: ["3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14-dev"]
 
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install psutil platformdirs pytest
+          pip install psutil pytest packaging platformdirs
 
       - name: Install package (no-deps to avoid GUI reqs)
         run: pip install -e . --no-deps
@@ -45,23 +46,3 @@ jobs:
             --ignore=src/lufus/gui \
             --ignore=src/lufus/drives/autodetect_usb.py \
             tests/
-
-    continue-on-error: true
-
-  ruff_lint:
-    name: Ruff lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: 'check .'
-
-  ruff_format:
-    name: Ruff format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: 'format --check'

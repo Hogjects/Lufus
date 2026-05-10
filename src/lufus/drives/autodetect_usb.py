@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject, pyqtSignal, QSocketNotifier
+from PySide6.QtCore import QObject, Signal, QSocketNotifier
 import pyudev
 from lufus.lufus_logging import get_logger
 
@@ -6,9 +6,9 @@ log = get_logger(__name__)
 
 
 class UsbMonitor(QObject):
-    device_added = pyqtSignal(str)
-    device_removed = pyqtSignal(str)
-    device_list_updated = pyqtSignal(dict)
+    device_added = Signal(str)
+    device_removed = Signal(str)
+    device_list_updated = Signal(dict)
 
     def __init__(self):
         super().__init__()
@@ -42,9 +42,12 @@ class UsbMonitor(QObject):
                 serial = device.get("ID_SERIAL_SHORT") or "no serial"
                 self.devices[node] = label
                 log.info(
-                    "UsbMonitor: found existing USB device: %s label=%r "
-                    "vendor=%r model=%r serial=%r",
-                    node, label, vendor, model, serial,
+                    "UsbMonitor: found existing USB device: %s label=%r vendor=%r model=%r serial=%r",
+                    node,
+                    label,
+                    vendor,
+                    model,
+                    serial,
                 )
                 found += 1
         log.info("UsbMonitor: initial scan complete, %d USB block device(s) found", found)
@@ -65,7 +68,8 @@ class UsbMonitor(QObject):
         node = device.device_node
         if not node:
             log.warning(
-                "UsbMonitor: ignoring event with no device_node (action=%s)", device.action
+                "UsbMonitor: ignoring event with no device_node (action=%s)",
+                device.action,
             )
             return
 
@@ -76,7 +80,11 @@ class UsbMonitor(QObject):
 
         log.info(
             "UsbMonitor: udev event -> action=%s, node=%s, label=%r, vendor=%r, model=%r",
-            action, node, label, vendor, model,
+            action,
+            node,
+            label,
+            vendor,
+            model,
         )
 
         changed = False
@@ -89,7 +97,9 @@ class UsbMonitor(QObject):
             if node in self.devices:
                 removed_label = self.devices.pop(node)
                 log.info(
-                    "UsbMonitor: device removed: %s (was labeled %r)", node, removed_label
+                    "UsbMonitor: device removed: %s (was labeled %r)",
+                    node,
+                    removed_label,
                 )
                 self.device_removed.emit(node)
                 changed = True
