@@ -43,7 +43,7 @@ msgbox_verify_fail_title,Verification Failed
 msgbox_verify_fail_body,SHA256 checksum mismatch! The file may be corrupted.
 msgbox_invalid_hash_title,Invalid Hash
 msgbox_invalid_hash_body,The provided SHA256 hash is invalid.
-combo_flash_iso,Iso Mode
+combo_flash_iso,מצב ISO
 combo_flash_woe,Woe USB
 combo_flash_ventoy,Ventoy
 combo_flash_dd,DD
@@ -52,18 +52,18 @@ btn_select,SELECT
 btn_start,START
 btn_cancel,CANCEL
 tooltip_refresh,Refresh USB devices (Ctrl+R)
-tooltip_download,Download updates
-tooltip_about,About
-tooltip_settings,Settings
+tooltip_download,הורד עדכונים
+tooltip_about,אודות
+tooltip_settings,הגדרות
 tooltip_log,Log
-status_ready,Ready
+status_ready,מוכן
 status_scanning,Scanning for USB devices...
-status_scan_failed,Scan failed
+status_scan_failed,סריקה נכשלה
 status_flashing,Flashing...
-progress_preparing,Preparing...
-progress_complete,Complete! 100%
-progress_failed,Failed
-progress_starting,Starting.. 10%
+progress_preparing,מתכונן...
+progress_complete,מוצלח! 100%
+progress_failed,נכשל
+progress_starting,מתחיל... 10%
 progress_unmounted,Unmounted Drive.. 20%
 progress_formatted,Format Drive.. 60%
 progress_label_changed,Changed Label.. 80%
@@ -88,8 +88,8 @@ msgbox_scan_error_body,Failed to scan for USB devices:
 no_usb_found,No USB devices found
 dlg_select_image_title,Select Disk Image
 dlg_select_image_filter,"Disk Images (*.iso *.dmg *.img *.bin *.raw);;All Files (*)"
-about_content,"Lufus is a disk image writer written in Python for Linux.
-Inspired by the original Rufus tool for Windows.
+about_content,"
+לופוס הינה תוכנה לרישום אימג' דיסק הנכתבה בפייתון בשביל לינוקס, מבוססת על התוכנה רופוס לווינדוס.
 Version: 1.0.0
 GitHub: github.com/hog185/lufus"
 about_subtitle,USB Flash Tool
