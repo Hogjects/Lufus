@@ -17,3 +17,9 @@ libxdamage1
 python3
 python3-pip
 python3-venv
+ntfs-3g
+wimtools
+exfatprogs
+util-linux
+udev
+parted
