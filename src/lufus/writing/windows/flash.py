@@ -3,7 +3,6 @@ import subprocess
 import os
 import glob
 import tempfile
-import contextlib
 import re
 import time
 from typing import TypedDict
@@ -117,87 +116,43 @@ def _copy_tree_with_progress(
     copied_bytes = 0
 
     def _copy_file(src: str, dst: str) -> str:
-        """
-        copy_function passed to shutil.copytree. Copies one file,
-        updates copied_bytes, and fires callbacks.
-        """
         nonlocal copied_bytes
-
         size = os.path.getsize(src)
         name = os.path.relpath(src)
-
         if status_cb:
             status_cb(f"Copying {name} ({size / 1024**2:.1f} MiB)")
-
-        shutil.copy2(src, dst)  # preserves timestamps, like cp -p
+        shutil.copy2(src, dst)
         copied_bytes += size
-
         if progress_cb and total_bytes > 0:
             pct = base_pct + int((copied_bytes / total_bytes) * (end_pct - base_pct))
             progress_cb(min(pct, end_pct))
-
         return dst
 
     for item in src_items:
         item_name = os.path.basename(item)
         dest_path = os.path.join(dst, item_name)
         if os.path.isdir(item):
-            shutil.copytree(
-                item,
-                dest_path,
-                copy_function=_copy_file,
-                dirs_exist_ok=True,
-            )
+            shutil.copytree(item, dest_path, copy_function=_copy_file, dirs_exist_ok=True)
         else:
             _copy_file(item, dest_path)
 
 
-def _find_ntfs_tool(status_cb=None) -> str | None:
-    """Find mkfs.ntfs/mkntfs, installing ntfs-3g if needed. Returns command name or None."""
+def _find_ntfs_tool() -> str:
+    """Find mkfs.ntfs/mkntfs. Raises FileNotFoundError if not available."""
     for candidate in ["mkfs.ntfs", "mkntfs"]:
         if subprocess.run(["which", candidate], capture_output=True).returncode == 0:
             return candidate
-
-    if status_cb:
-        status_cb("ntfs-3g not found, attempting to install...")
-    pkg_managers = [
-        ["apt-get", "install", "-y", "ntfs-3g"],
-        ["dnf", "install", "-y", "ntfs-3g"],
-        ["pacman", "-S", "--noconfirm", "ntfs-3g"],
-        ["zypper", "install", "-y", "ntfs-3g"],
-    ]
-    for pm_cmd in pkg_managers:
-        if subprocess.run(["which", pm_cmd[0]], capture_output=True).returncode == 0:
-            run_cmd(["sudo"] + pm_cmd)
-            break  # stop after the first working package manager
-
-    # Re-check after installation attempt
-    for candidate in ["mkfs.ntfs", "mkntfs"]:
-        if subprocess.run(["which", candidate], capture_output=True).returncode == 0:
-            return candidate  # installation succeeded
-
-    return None
+    raise FileNotFoundError(
+        "mkfs.ntfs / mkntfs not found. Install ntfs-3g: "
+        "sudo apt install ntfs-3g  /  sudo pacman -S ntfs-3g"
+    )
 
 
-def _ensure_wimlib(status_cb=None) -> None:
-    """Install wimlib-imagex if not present. Raises FileNotFoundError if it can't be found after install."""
-    if subprocess.run(["which", "wimlib-imagex"], capture_output=True).returncode == 0:
-        return
-    if status_cb:
-        status_cb("wimlib-imagex not found, attempting to install...")
-    pkg_managers = [
-        ["apt-get", "install", "-y", "wimtools"],
-        ["dnf", "install", "-y", "wimlib-utils"],
-        ["pacman", "-S", "--noconfirm", "wimlib"],
-        ["zypper", "install", "-y", "wimtools"],
-    ]
-    for pm_cmd in pkg_managers:
-        if subprocess.run(["which", pm_cmd[0]], capture_output=True).returncode == 0:
-            run_cmd(["sudo"] + pm_cmd)
-            break
+def _check_wimlib() -> None:
+    """Raise FileNotFoundError if wimlib-imagex is not available."""
     if subprocess.run(["which", "wimlib-imagex"], capture_output=True).returncode != 0:
         raise FileNotFoundError(
-            "wimlib-imagex not found. Install manually: sudo pacman -S wimlib  /  sudo apt install wimtools"
+            "wimlib-imagex not found. Install it: sudo apt install wimtools  /  sudo pacman -S wimlib"
         )
 
 
@@ -219,7 +174,9 @@ def _copy_with_wim_split(iso_mount, mount_data, extract_used, _status, _emit):
     dst_sources = os.path.join(mount_data, "sources")
     os.makedirs(dst_sources, exist_ok=True)
     non_wim_sources = [
-        os.path.join(src_sources, f) for f in os.listdir(src_sources) if f.lower() not in ("install.wim", "install.esd")
+        os.path.join(src_sources, f)
+        for f in os.listdir(src_sources)
+        if f.lower() not in ("install.wim", "install.esd")
     ]
     _copy_tree_with_progress(
         src_items=non_wim_sources,
@@ -241,7 +198,7 @@ def _copy_with_wim_split(iso_mount, mount_data, extract_used, _status, _emit):
 
     wim_dst = os.path.join(dst_sources, "install.swm")
     _status(f"Splitting {wim_src} -> {wim_dst} (max 3.8 GiB chunks)...")
-    _ensure_wimlib(status_cb=_status)
+    _check_wimlib()
     run_cmd(["wimlib-imagex", "split", wim_src, wim_dst, str(int(3.8 * 1024))])
     _status("WIM split complete")
     _emit(75)
@@ -350,9 +307,7 @@ def flash_windows(device: str, iso: str, scheme: PartitionScheme, progress_cb=No
 
         # Step 3: Format partitions
         if scheme == PartitionScheme.WINDOWS_NTFS:
-            ntfs_cmd = _find_ntfs_tool(status_cb=_status)
-            if ntfs_cmd is None:
-                raise FileNotFoundError("mkfs.ntfs / mkntfs not found. Install ntfs-3g.")
+            ntfs_cmd = _find_ntfs_tool()
             _status(f"Formatting {data_part} as {scheme.name}...")
             run_cmd(["sudo", ntfs_cmd, "-f", "-L", "WINDOWS", data_part])
         elif scheme == PartitionScheme.WINDOWS_EXFAT:
@@ -442,19 +397,8 @@ def flash_windows(device: str, iso: str, scheme: PartitionScheme, progress_cb=No
             subprocess.run(["sudo", "umount", iso_mount], capture_output=True)
 
 
-# ---new---
 def mount_iso(iso_path: str) -> str | None:
-    """This function mounts an iso file at /mnt/iso/ and returns the location if mount is successfull
-
-    command:`sudo mount -o loop iso_path /mnt/iso/{iso name without extension}
-
-    Args:
-        iso_path (str): The location of the iso file
-
-    Returns:
-        str: the path where it's mounted
-        None: if mounting fails return None
-    """
+    """Mount an ISO file at /mnt/iso/<name> and return the mount path, or None on failure."""
     mount_base = "/mnt/iso"
     basename = os.path.basename(iso_path)
     iso_name_without_extension = os.path.splitext(basename)[0]
@@ -464,38 +408,37 @@ def mount_iso(iso_path: str) -> str | None:
         os.makedirs(iso_mount_location, exist_ok=True)
         _status_print(f"Mounting {iso_path} in {iso_mount_location}")
         result = subprocess.run(
-            ["sudo", "mount", "-o", "loop", iso_path, iso_mount_location], capture_output=True, text=True
+            ["sudo", "mount", "-o", "loop", iso_path, iso_mount_location],
+            capture_output=True,
+            text=True,
         )
-
         if result.returncode == 0:
             _status_print(f"Success: Mounted {iso_path} to {iso_mount_location} successfully!")
             return iso_mount_location
         else:
-            _status_print(f"Failed: Failed to mount {iso_path} to {iso_mount_location} successfully!")
-
+            _status_print(f"Failed: Failed to mount {iso_path} to {iso_mount_location}. {result.stderr.strip()}")
             return None
     except Exception as e:
-        _status_print(f"An error occured during mounting iso: {e}")
+        _status_print(f"An error occurred during mounting iso: {e}")
         return None
 
 
 def create_partitions(drive: str, scheme: PartitionScheme) -> list[PartitionInfo]:
-    """
-    Unified function to partition a drive based on a selected PartitionScheme.
-    Returns a list of created partition paths and their roles.
-    """
+    """Partition a drive based on the selected PartitionScheme.
 
+    Returns a list of dicts with 'role' and 'path' for each created partition,
+    or an empty list on failure.
+    """
     try:
         total_sectors = _get_disk_size_sectors(drive)
         sectors_per_mib = 1024 * 1024 // 512
-        efi_sectors = 2 * sectors_per_mib  # 2 MiB for EFI partition (more than enough for efi-ntfs)
-        alignment = 2048  # sectors (1 MiB alignment, standard)
+        efi_sectors = 2 * sectors_per_mib
+        alignment = 2048
 
-        # data starts at sector 2048 (standard GPT start)
         data_start = alignment
-        data_end = total_sectors - efi_sectors - alignment  # leave room for EFI + alignment
+        data_end = total_sectors - efi_sectors - alignment
         data_size = data_end - data_start
-        # Define the sfdisk scripts for each enum case
+
         scripts = {
             PartitionScheme.WINDOWS_NTFS: (
                 f"start={data_start}, size={data_size}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"
@@ -505,21 +448,19 @@ def create_partitions(drive: str, scheme: PartitionScheme) -> list[PartitionInfo
                 f"start={data_start}, size={data_size}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"
                 f"size={efi_sectors}, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B\n"
             ),
-            PartitionScheme.SIMPLE_FAT32: (f"start={data_start}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"),
+            PartitionScheme.SIMPLE_FAT32: (
+                f"start={data_start}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"
+            ),
         }
 
         script = scripts.get(scheme)
         if not script:
             raise ValueError(f"Invalid partition scheme: {scheme}")
 
-        # Apply the GPT table and script
         subprocess.run(["sudo", "sfdisk", "--label", "gpt", drive], input=script, text=True, check=True)
-
-        # Refresh kernel table
         subprocess.run(["sudo", "partprobe", drive], check=True)
         time.sleep(0.5)
 
-        # Build the return list
         separator = "p" if drive[-1].isdigit() else ""
         num_parts = len(script.strip().split("\n"))
 
@@ -535,20 +476,15 @@ def create_partitions(drive: str, scheme: PartitionScheme) -> list[PartitionInfo
 
 def _get_disk_size_sectors(drive: str) -> int:
     result = subprocess.run(["sudo", "blockdev", "--getsz", drive], capture_output=True, text=True, check=True)
-    return int(result.stdout.strip())  # returns 512-byte sectors
+    return int(result.stdout.strip())
 
 
 UEFI_NTFS_URL = "https://github.com/pbatard/rufus/raw/master/res/uefi/uefi-ntfs.img"
-
-# Pin the expected SHA-256 of the bundled uefi-ntfs.img.
-# UPDATE THIS HASH whenever you update the bundled/downloaded image.
-# Obtain it with: sha256sum uefi-ntfs.img
-# An empty string disables verification and logs a security warning (dev only).
 _UEFI_NTFS_SHA256 = ""
 
 
 def _verify_sha256(path: str, expected: str) -> bool:
-    """Return True if the SHA-256 of *path* matches *expected* (hex, case-insensitive)."""
+    """Return True if the SHA-256 of path matches expected (hex, case-insensitive)."""
     import hashlib
 
     h = hashlib.sha256()
@@ -559,25 +495,20 @@ def _verify_sha256(path: str, expected: str) -> bool:
 
 
 def find_uefi_ntfs_img(status_cb=None) -> str:
-    """Find uefi-ntfs.img next to this script, or download it if missing.
+    """Return the path to uefi-ntfs.img, downloading it if not bundled.
 
-    Prefer shipping uefi-ntfs.img as part of the package so the download
-    path is never taken in production.  When a download does occur, the
-    file is verified against _UEFI_NTFS_SHA256 before use.
+    Raises FileNotFoundError if the image is missing or fails verification.
     """
     candidate = os.path.join(os.path.dirname(__file__), "uefi-ntfs.img")
     if os.path.exists(candidate):
-        # Verify the bundled copy too — catches accidental corruption.
-        if _UEFI_NTFS_SHA256:
-            if not _verify_sha256(candidate, _UEFI_NTFS_SHA256):
-                raise FileNotFoundError(
-                    f"uefi-ntfs.img failed SHA-256 verification. Re-bundle the file and update _UEFI_NTFS_SHA256."
-                )
+        if _UEFI_NTFS_SHA256 and not _verify_sha256(candidate, _UEFI_NTFS_SHA256):
+            raise FileNotFoundError(
+                "uefi-ntfs.img failed SHA-256 verification. Re-bundle the file and update _UEFI_NTFS_SHA256."
+            )
         return candidate
 
     if status_cb:
         status_cb(f"uefi-ntfs.img not found, downloading from {UEFI_NTFS_URL}...")
-
     if not _UEFI_NTFS_SHA256:
         log.warning(
             "Downloading uefi-ntfs.img without a pinned hash — set _UEFI_NTFS_SHA256 before shipping to production."
@@ -589,14 +520,12 @@ def find_uefi_ntfs_img(status_cb=None) -> str:
         urllib.request.urlretrieve(UEFI_NTFS_URL, candidate)
         if status_cb:
             status_cb(f"Downloaded uefi-ntfs.img to {candidate}")
-
-        if _UEFI_NTFS_SHA256:
-            if not _verify_sha256(candidate, _UEFI_NTFS_SHA256):
-                os.unlink(candidate)
-                raise FileNotFoundError(
-                    f"Downloaded uefi-ntfs.img failed SHA-256 verification — "
-                    f"file deleted. Check {UEFI_NTFS_URL} or update _UEFI_NTFS_SHA256."
-                )
+        if _UEFI_NTFS_SHA256 and not _verify_sha256(candidate, _UEFI_NTFS_SHA256):
+            os.unlink(candidate)
+            raise FileNotFoundError(
+                f"Downloaded uefi-ntfs.img failed SHA-256 verification — "
+                f"file deleted. Check {UEFI_NTFS_URL} or update _UEFI_NTFS_SHA256."
+            )
         return candidate
     except FileNotFoundError:
         raise
