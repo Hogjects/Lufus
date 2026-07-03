@@ -143,8 +143,7 @@ def _find_ntfs_tool() -> str:
         if subprocess.run(["which", candidate], capture_output=True).returncode == 0:
             return candidate
     raise FileNotFoundError(
-        "mkfs.ntfs / mkntfs not found. Install ntfs-3g: "
-        "sudo apt install ntfs-3g  /  sudo pacman -S ntfs-3g"
+        "mkfs.ntfs / mkntfs not found. Install ntfs-3g: sudo apt install ntfs-3g  /  sudo pacman -S ntfs-3g"
     )
 
 
@@ -174,9 +173,7 @@ def _copy_with_wim_split(iso_mount, mount_data, extract_used, _status, _emit):
     dst_sources = os.path.join(mount_data, "sources")
     os.makedirs(dst_sources, exist_ok=True)
     non_wim_sources = [
-        os.path.join(src_sources, f)
-        for f in os.listdir(src_sources)
-        if f.lower() not in ("install.wim", "install.esd")
+        os.path.join(src_sources, f) for f in os.listdir(src_sources) if f.lower() not in ("install.wim", "install.esd")
     ]
     _copy_tree_with_progress(
         src_items=non_wim_sources,
@@ -448,9 +445,7 @@ def create_partitions(drive: str, scheme: PartitionScheme) -> list[PartitionInfo
                 f"start={data_start}, size={data_size}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"
                 f"size={efi_sectors}, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B\n"
             ),
-            PartitionScheme.SIMPLE_FAT32: (
-                f"start={data_start}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"
-            ),
+            PartitionScheme.SIMPLE_FAT32: (f"start={data_start}, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n"),
         }
 
         script = scripts.get(scheme)
