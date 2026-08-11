@@ -58,6 +58,10 @@ or `mkdocs serve` to run a dev server.
 6. Follow proper PEP8 naming scheme (experimental)
 7. Any known limitations must be clearly stated in the PR
 
+### For Package maintainers
+Any release with a tag containing "alpha"/"x-a-x"/"testing" or a pre-release should not be packaged. Only the "beta"/"x-b-x"/"stable" release, **not marked as prerelease**, should be packaged. 
+
+
 Your PR may be rejected by the maintainers for any of the reasons without prior notice. Please ping other maintainers if you think a mistake has been made. Guidelines are a subject to change.
 
 Feedback, testing, translations, and other contributions are appreciated. Please join our Discord server to get quick support on contributing and debugging.
