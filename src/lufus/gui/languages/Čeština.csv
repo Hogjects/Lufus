@@ -1,0 +1,144 @@
+key,value
+window_title,lufus
+log_window_title,lufus Protokol
+about_window_title,O aplikaci
+settings_window_title,Nastavení
+btn_copy_log,Kopírovat do schránky
+btn_save_log,Uložit protokol...
+dlg_save_log_title,Uložit protokol
+save_failed_title,Uložení se nezdařilo
+save_failed_body,Nepodařilo se uložit protokol:
+settings_label_language,Jazyk
+settings_no_languages,Nebyly nalezeny žádné jazyky
+header_drive_properties,Vlastnosti jednotky
+header_format_options,Možnosti formátování
+header_status,Stav
+lbl_device,Zařízení
+lbl_boot_selection,Výběr spouštění
+lbl_image_option,Možnost obrazu
+lbl_partition_scheme,Schéma oddílů
+lbl_target_system,Cílový systém
+lbl_volume_label,Název svazku
+lbl_file_system,Souborový systém
+lbl_flash_option,Možnost zápisu
+lbl_cluster_size,Velikost clusteru
+combo_image_windows,Standardní instalace Windows
+combo_image_linux,Standardní instalace Linux
+combo_image_other,Jakákoli instalace (režim DD)
+combo_image_format,Pouze režim formátování
+combo_partition_gpt,GPT
+combo_partition_mbr,MBR
+combo_target_uefi,UEFI (bez CSM)
+combo_target_bios,BIOS (nebo UEFI-CSM)
+combo_cluster_4096,4096 bajtů (výchozí)
+combo_cluster_8192,8192 bajtů
+combo_badblocks_1pass,1 průchod
+chk_quick_format,Rychlé formátování
+chk_extended_label,Vytvořit rozšířenou značku
+chk_bad_blocks,Zkontrolovat poškozené bloky
+chk_verify_hash,Ověřit kontrolní součet SHA256
+lbl_expected_hash,Očekávaný SHA256:
+progress_verifying,Ověřování kontrolního součtu...
+msgbox_flash_warning_title,Upozornění: Ztráta dat
+msgbox_flash_warning_body,"Tímto se vymažou VŠECHNA data na vybraném zařízení.
+
+Zařízení: {device}
+
+Jste si jisti, že chcete pokračovat?"
+msgbox_verify_fail_title,Ověření se nezdařilo
+msgbox_verify_fail_body,Kontrolní součet SHA256 nesouhlasí! Soubor může být poškozený.
+msgbox_invalid_hash_title,Neplatný hash
+msgbox_invalid_hash_body,Poskytnutý SHA256 hash je neplatný.
+combo_flash_iso,Režim ISO
+combo_flash_woe,Woe USB
+combo_flash_ventoy,Ventoy
+combo_flash_dd,DD
+combo_flash_none,Žádný
+btn_select,VYBRAT
+btn_start,SPUSTIT
+btn_cancel,ZRUŠIT
+tooltip_refresh,Obnovit USB zařízení (Ctrl+R)
+tooltip_download,Stáhnout aktualizace
+tooltip_about,O aplikaci
+tooltip_settings,Nastavení
+tooltip_log,Protokol
+status_ready,Připraveno
+status_scanning,Hledání USB zařízení...
+status_scan_failed,Načtení se nezdařilo
+status_flashing,Zapisování...
+progress_preparing,Připravování...
+progress_complete,Dokončeno! 100%
+progress_failed,Selhalo
+progress_starting,Spouštění.. 10%
+progress_unmounted,Odpojená jednotka.. 20%
+progress_formatted,Formátování jednotky.. 60%
+progress_label_changed,Změněna značka.. 80%
+progress_mount_done,Připojení dokončeno.. Dokončeno! 100%
+msgbox_cancel_title,Zrušit
+msgbox_cancel_body,Opravdu chcete akci zrušit?
+msgbox_success_title,Úspěch
+msgbox_success_body,USB jednotka byla úspěšně zapsána!
+msgbox_error_title,Chyba
+msgbox_error_body,Zápis USB jednotky se nezdařil.
+msgbox_no_image_title,Žádný obraz
+msgbox_no_image_body,Nejprve vyberte platný instalační soubor.
+msgbox_no_device_title,Žádné zařízení
+msgbox_no_device_body,Nejprve vyberte USB zařízení.
+msgbox_usb_found_title,Nalezeno nové USB zařízení
+msgbox_usb_found_body,Nalezeno USB zařízení
+msgbox_no_devices_title,Žádná zařízení
+msgbox_no_devices_body,"Nebyly nalezeny žádné USB jednotky.
+Připojte jednotku a zkuste to znovu."
+msgbox_scan_error_title,Chyba hledání
+msgbox_scan_error_body,Nepodařilo se hledat USB zařízení:
+no_usb_found,Nebyly nalezeny žádné USB zařízení
+dlg_select_image_title,Vyberte obraz disku
+dlg_select_image_filter,Obrazy disků (*.iso *.dmg *.img *.bin *.raw);;Všechny soubory (*)
+about_content,"Lufus je zapisovač obrazů disků napsaný v Pythonu pro Linux.
+Pochází z původního nástroje Rufus pro Windows.
+GitHub: github.com/hogjects/lufus"
+about_subtitle,USB flash nástroj
+btn_close,Zavřít
+btn_ok,OK
+combo_boot_default,installation_media.iso
+tooltip_website,Webová stránka
+settings_label_theme,Téma
+input_hash_placeholder,Zde zadejte očekávaný SHA256 hash...
+combo_badblocks_2pass,2 průchody
+combo_badblocks_3pass,3 průchody
+status_unmounting_all,Odpínání všech oddílů na {device}...
+status_unmounting,Odpojení {part}...
+status_remounting,Připojení {part}...
+status_format_starting,Spouštění operace formátování...
+status_format_in_progress,Formátování jednotky...
+status_format_complete,Formátování dokončeno!
+status_format_failed,FORMÁTOVÁNÍ SE NEZDAŘILO. Podrobnosti najdete v protokolu výše.
+status_flash_error,Chyba zápisu: {error}
+acc_device,Výběr zařízení
+acc_device_desc,Vyberte USB zařízení, které chcete použít
+acc_refresh,Obnovit zařízení
+acc_refresh_desc,Hledat připojená USB zařízení
+acc_boot,Výběr obrazového souboru
+acc_boot_desc,Zobrazuje aktuálně vybraný obrazový soubor
+acc_select,Procházet soubory obrazů
+acc_image_option,Výběr typu obrazu
+acc_image_option_desc,Zvolte typ obrazu pro zápis: Windows
+acc_volume_label,Políčko názvu svazku
+acc_volume_label_desc,Zadejte název pro USB svazek
+acc_filesystem,Výběr souborového systému
+acc_cluster,Výběr velikosti clusteru
+acc_flash_option,Výběr metody zápisu
+acc_quick_format,Zaškrtávací políčko rychlého formátování
+acc_extended_label,Zaškrtávací políčko vytvoření rozšířené značky
+acc_bad_blocks,Zaškrtávací políčko kontroly poškozených bloků
+acc_bad_blocks_passes,Výběr počtu průchodů kontroly poškozených bloků
+acc_verify_hash,Zaškrtávací políčko ověření kontrolního součtu SHA256
+acc_hash_input,Vstup očekávaného SHA256 hash
+acc_hash_input_desc,Vložte očekávaný 64 znakový SHA256 hash zde
+acc_progress,Ukazatel průběhu operace
+acc_start,Spustit operaci
+acc_cancel,Zrušit operaci
+acc_website,Otevřít web Lufus
+acc_about,O aplikaci Lufus
+acc_settings,Otevřít nastavení
+acc_log,Otevřít okno protokolu
